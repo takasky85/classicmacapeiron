@@ -5,6 +5,8 @@ Tested on Windows 11 and Ubuntu 26.04
 
 No original assets included.
 
+youtube.com/watch?v=a0l0yr2OHTA&feature=youtu.be
+
 ![type](https://img.shields.io/badge/type-fan%20preservation-orange)
 
 
