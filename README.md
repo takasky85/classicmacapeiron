@@ -1,5 +1,7 @@
-# classicmacambrosia
+# Ambrosia Apeiron Original Release ported to SDL3
 Attempting to decompile the classic version of Ambrosia's game Apeiron 1.0.3 for 68k/PPC Classic Mac OS 7/8/9.
+
+Tested on Windows 11 and Ubuntu 26.04
 
 No original assets included.
 
