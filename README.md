@@ -5,6 +5,8 @@ Tested on Windows 11 and Ubuntu 26.04
 
 No original assets included.
 
+
+Video of progress so far:
 [![Watch the video](https://img.youtube.com/vi/a0l0yr2OHTA/hqdefault.jpg)](https://www.youtube.com/watch?v=a0l0yr2OHTA)
 
 ![type](https://img.shields.io/badge/type-fan%20preservation-orange)
