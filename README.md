@@ -1,9 +1,9 @@
-# Ambrosia Apeiron 1.0.3 for Classic Mac OS (PowerPC) ported to SDL3
-Attempting to decompile the classic version of Ambrosia's game Apeiron 1.0.3 for 68k/PPC Classic Mac OS 7/8/9.
+# Ambrosia Apeiron 1.0.3 for Classic Mac OS ported to SDL3
+Attempting to decompile PowerPC binaries for Ambrosia's Apeiron 1.0.3 for Classic Mac OS 7/8/9.
 
 Tested on Windows 11 and Ubuntu 26.04
 
-No original assets included.
+No original assets included. I tested by installing Apeiron in Mac OS 7.5.3 on Basilisk and copying the install folder to "My Computer", that exposes all of the resource files as plain .rsrc folders in Windows.
 
 
 Video of progress so far:
