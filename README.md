@@ -1,6 +1,8 @@
 # Ambrosia Apeiron 1.0.3 for Classic Mac OS ported to SDL3
 Attempting to decompile PowerPC binaries for Ambrosia's Apeiron 1.0.3 for Classic Mac OS 7/8/9.
 
+![type](https://img.shields.io/badge/type-fan%20preservation-orange)
+
 Tested on Windows 11 and Ubuntu 26.04
 
 No original assets included. I tested by installing Apeiron in Mac OS 7.5.3 on Basilisk and copying the install folder to "My Computer", that exposes all of the resource files as plain .rsrc folders in Windows.
@@ -10,7 +12,7 @@ Video of progress so far:
 
 [![Watch the video](https://img.youtube.com/vi/a0l0yr2OHTA/hqdefault.jpg)](https://www.youtube.com/watch?v=a0l0yr2OHTA)
 
-![type](https://img.shields.io/badge/type-fan%20preservation-orange)
+
 
 
 <img width="606" height="223" alt="PICT_889_Apeiron Intro Logo pictRes" src="https://github.com/user-attachments/assets/c0e5f941-e5cc-4346-995b-c1ee417c1435" />
