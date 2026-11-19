@@ -25,15 +25,19 @@ typedef Uint32 SDL_AudioDeviceID; typedef Uint32 SDL_MouseButtonFlags;
 #define SDLK_RETURN 0x0du
 #define SDLK_KP_ENTER 0x0eu
 #define SDLK_BACKSPACE 0x08u
+#define SDLK_F11 0x4000003Au
 typedef enum {
-    SDL_SCANCODE_UNKNOWN = 0, SDL_SCANCODE_A = 4, SDL_SCANCODE_D = 7, SDL_SCANCODE_S = 22,
-    SDL_SCANCODE_W = 26, SDL_SCANCODE_RETURN = 40, SDL_SCANCODE_ESCAPE = 41,
+    SDL_SCANCODE_UNKNOWN = 0, SDL_SCANCODE_A = 4, SDL_SCANCODE_D = 7, SDL_SCANCODE_F1 = 58, SDL_SCANCODE_F2 = 59, SDL_SCANCODE_F3 = 60, SDL_SCANCODE_F4 = 61,
+    SDL_SCANCODE_F5 = 62, SDL_SCANCODE_F6 = 63, SDL_SCANCODE_F7 = 64, SDL_SCANCODE_F8 = 65,
+    SDL_SCANCODE_M = 16, SDL_SCANCODE_N = 17, SDL_SCANCODE_S = 22,
+    SDL_SCANCODE_W = 26, SDL_SCANCODE_X = 27, SDL_SCANCODE_RETURN = 40, SDL_SCANCODE_ESCAPE = 41,
     SDL_SCANCODE_SPACE = 44, SDL_SCANCODE_RIGHT = 79, SDL_SCANCODE_LEFT = 80,
     SDL_SCANCODE_DOWN = 81, SDL_SCANCODE_UP = 82, SDL_SCANCODE_LCTRL = 224, SDL_SCANCODE_RCTRL = 228,
     SDL_NUM_SCANCODES = 512
 } SDL_Scancode;
 enum { SDL_EVENT_QUIT = 0x100, SDL_EVENT_KEY_DOWN = 0x300, SDL_EVENT_TEXT_INPUT = 0x303,
-       SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401 };
+       SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401,
+       SDL_EVENT_WINDOW_FOCUS_GAINED = 0x20d, SDL_EVENT_WINDOW_FOCUS_LOST = 0x20e };
 typedef struct { Uint8 r, g, b, a; } SDL_Color;
 typedef struct { int ncolors; SDL_Color *colors; } SDL_Palette;
 typedef struct SDL_Surface { SDL_PixelFormat format; int w, h, pitch; void *pixels; SDL_Palette *pal; } SDL_Surface;
@@ -47,6 +51,9 @@ bool SDL_Init(SDL_InitFlags); bool SDL_InitSubSystem(SDL_InitFlags); void SDL_Qu
 void SDL_Log(const char *fmt, ...);
 bool SDL_CreateWindowAndRenderer(const char *, int, int, SDL_WindowFlags, SDL_Window **, SDL_Renderer **);
 bool SDL_SetWindowMinimumSize(SDL_Window *, int, int);
+bool SDL_MaximizeWindow(SDL_Window *);
+bool SDL_RestoreWindow(SDL_Window *);
+bool SDL_SetWindowFullscreen(SDL_Window *, bool);
 SDL_Texture *SDL_CreateTexture(SDL_Renderer *, SDL_PixelFormat, SDL_TextureAccess, int, int);
 bool SDL_SetTextureScaleMode(SDL_Texture *, SDL_ScaleMode);
 bool SDL_UpdateTexture(SDL_Texture *, const SDL_Rect *, const void *, int);
@@ -60,6 +67,46 @@ bool SDL_RenderPresent(SDL_Renderer *);
 void SDL_DestroyTexture(SDL_Texture *); void SDL_DestroyRenderer(SDL_Renderer *); void SDL_DestroyWindow(SDL_Window *);
 bool SDL_PollEvent(SDL_Event *); Uint64 SDL_GetTicks(void); void SDL_Delay(Uint32);
 const bool *SDL_GetKeyboardState(int *);
+typedef unsigned short SDL_Keymod;
+#define SDL_KMOD_CAPS 0x2000u
+SDL_Keymod SDL_GetModState(void);
+bool SDL_SetWindowRelativeMouseMode(SDL_Window *, bool);
+unsigned int SDL_GetRelativeMouseState(float *, float *);
+void SDL_free(void *);
+typedef unsigned int SDL_AudioDeviceID;
+#define SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK 0xFFFFFFFFu
+SDL_AudioDeviceID SDL_OpenAudioDevice(SDL_AudioDeviceID, const SDL_AudioSpec *);
+SDL_AudioStream *SDL_CreateAudioStream(const SDL_AudioSpec *, const SDL_AudioSpec *);
+bool SDL_BindAudioStream(SDL_AudioDeviceID, SDL_AudioStream *);
+bool SDL_ClearAudioStream(SDL_AudioStream *);
+bool SDL_SetAudioStreamFormat(SDL_AudioStream *, const SDL_AudioSpec *, const SDL_AudioSpec *);
+bool SDL_RaiseWindow(SDL_Window *);
+#define SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED "SDL_WINDOW_ACTIVATE_WHEN_RAISED"
+#define SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN "SDL_WINDOW_ACTIVATE_WHEN_SHOWN"
+#define SDL_HINT_FORCE_RAISEWINDOW "SDL_FORCE_RAISEWINDOW"
+typedef enum { SDL_FLASH_BRIEFLY = 1 } SDL_FlashOperation;
+bool SDL_SetHint(const char *, const char *);
+bool SDL_ShowWindow(SDL_Window *);
+bool SDL_SetWindowFocusable(SDL_Window *, bool);
+bool SDL_FlashWindow(SDL_Window *, SDL_FlashOperation);
+typedef struct SDL_Gamepad SDL_Gamepad;
+typedef int SDL_JoystickID;
+#define SDL_INIT_GAMEPAD 0x2000u
+#define SDL_EVENT_GAMEPAD_ADDED 1619
+#define SDL_EVENT_GAMEPAD_REMOVED 1620
+typedef enum { SDL_GAMEPAD_AXIS_LEFTX=0, SDL_GAMEPAD_AXIS_LEFTY=1 } SDL_GamepadAxis;
+typedef enum { SDL_GAMEPAD_BUTTON_SOUTH=0, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST,
+  SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_START, SDL_GAMEPAD_BUTTON_DPAD_UP,
+  SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT } SDL_GamepadButton;
+SDL_JoystickID *SDL_GetGamepads(int *);
+SDL_Gamepad *SDL_OpenGamepad(SDL_JoystickID);
+void SDL_CloseGamepad(SDL_Gamepad *);
+bool SDL_GamepadConnected(SDL_Gamepad *);
+const char *SDL_GetGamepadName(SDL_Gamepad *);
+short SDL_GetGamepadAxis(SDL_Gamepad *, SDL_GamepadAxis);
+bool SDL_GetGamepadButton(SDL_Gamepad *, SDL_GamepadButton);
+bool SDL_HideCursor(void);
+bool SDL_ShowCursor(void);
 SDL_MouseButtonFlags SDL_GetMouseState(float *, float *);
 SDL_Window *SDL_GetKeyboardFocus(void);
 bool SDL_StartTextInput(SDL_Window *); bool SDL_StopTextInput(SDL_Window *);
@@ -70,3 +117,16 @@ SDL_AudioStream *SDL_OpenAudioDeviceStream(SDL_AudioDeviceID, const SDL_AudioSpe
 bool SDL_PutAudioStreamData(SDL_AudioStream *, const void *, int); bool SDL_FlushAudioStream(SDL_AudioStream *);
 bool SDL_ResumeAudioStreamDevice(SDL_AudioStream *); int SDL_GetAudioStreamQueued(SDL_AudioStream *);
 void SDL_DestroyAudioStream(SDL_AudioStream *);
+typedef unsigned int SDL_DisplayID;
+bool SDL_SetRenderVSync(SDL_Renderer *, int);
+bool SDL_SyncWindow(SDL_Window *);
+SDL_DisplayID SDL_GetDisplayForWindow(SDL_Window *);
+bool SDL_GetDisplayUsableBounds(SDL_DisplayID, SDL_Rect *);
+bool SDL_SetWindowPosition(SDL_Window *, int, int);
+bool SDL_SetWindowSize(SDL_Window *, int, int);
+bool SDL_GetWindowSize(SDL_Window *, int *, int *);
+void SDL_PumpEvents(void);
+#define SDL_WINDOW_MAXIMIZED 0x80u
+#define SDL_WINDOW_INPUT_FOCUS 0x200u
+#define SDL_WINDOW_MOUSE_FOCUS 0x400u
+SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *);

@@ -277,7 +277,14 @@ bool cursor_load(const char *dir)
         ok = fscanf(f, "%d %d %d", &r, &g, &b) == 3;
         col[i] = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
     }
-    if (ok) (void)fgets(line, sizeof line, f);                 /* the rest of the colour line */
+    /* Skip to the end of the last colour line. Casting the call to void does not silence fgets's
+     * warn_unused_result - the result has to land somewhere - so it is taken and then discarded.
+     * Hitting the end of the file here only means the rows below are missing, and the loop that
+     * reads them catches that. */
+    if (ok) {
+        char *rest = fgets(line, sizeof line, f);
+        (void)rest;
+    }
     for (int y = 0; ok && y < cur_h; y++) {
         if (!fgets(line, sizeof line, f)) { ok = false; break; }
         for (int x = 0; x < cur_w; x++) {

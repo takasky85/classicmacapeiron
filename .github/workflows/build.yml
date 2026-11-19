@@ -1,0 +1,83 @@
+name: build
+
+# The game itself needs SDL3 and the extracted artwork, neither of which a clean runner has. What it
+# can do without either is compile every source file against the headless harness in tools/test,
+# which stands in for the SDL3 calls this port uses. That is enough to catch the thing most likely
+# to go wrong between rounds of work: source that has moved on from the stub it is tested against,
+# or a warning that has crept in. It is exactly the check that was missed when the harness in
+# tools/test fell behind src/ and stopped compiling it at all.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  headless:
+    name: compile against the headless harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Warnings in src/ are errors here. The stub is test scaffolding and is built without them.
+      - name: compile src/ with warnings as errors
+        run: |
+          for f in src/*.c; do
+            echo "--- $f"
+            gcc -std=gnu11 -Itools/test -Isrc \
+                -Wall -Wextra -Werror -Wno-unused-parameter \
+                -c "$f" -o /dev/null
+          done
+
+      - name: link the headless build
+        run: |
+          gcc -std=gnu11 -w -Itools/test -Isrc \
+              -o apeiron_headless src/*.c tools/test/sdl3_stub.c -lm
+
+      # Without assets/ the binary should say so and stop cleanly rather than crash. Exit status 1
+      # with a message is the expected outcome; a segfault (>= 128) is not.
+      - name: run it without assets and expect a clean refusal
+        run: |
+          set +e
+          NOAUDIO=1 LIMIT_MS=2000 ./apeiron_headless ./no-such-assets
+          status=$?
+          set -e
+          echo "exit status $status"
+          test "$status" -lt 128
+
+  python:
+    name: byte-compile the tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: compile every tool
+        run: python3 -m compileall -q tools
+
+  cmake:
+    name: configure without SDL3 or assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No SDL3 is installed here on purpose: CMakeLists should fetch it. And there is no assets/,
+      # which the post-build copy step used to fail the whole build over. Configuring is enough to
+      # check both - the full compile and link is what the release workflow does.
+      # SDL3 will not configure without X11 or Wayland development headers, which the runner
+      # image does not carry. This is the subset SDL needs to get through its own configure.
+      - name: install SDL3's build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libgl1-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libudev-dev
+      - name: cache the fetched SDL3
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: sdl3-configure-${{ hashFiles('CMakeLists.txt') }}
+      - name: cmake configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
