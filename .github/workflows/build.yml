@@ -1,0 +1,77 @@
+name: build
+
+# The game itself needs SDL3 and the extracted artwork, neither of which a clean runner has. What it
+# can do without either is compile every source file against the headless harness in tools/test,
+# which stands in for the SDL3 calls this port uses. That is enough to catch the thing most likely
+# to go wrong between rounds of work: source that has moved on from the stub it is tested against,
+# or a warning that has crept in. It is exactly the check that was missed when the harness in
+# tools/test fell behind src/ and stopped compiling it at all.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  headless:
+    name: compile against the headless harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Warnings in src/ are errors here. The stub is test scaffolding and is built without them.
+      - name: compile src/ with warnings as errors
+        run: |
+          for f in src/*.c; do
+            echo "--- $f"
+            gcc -std=gnu11 -Itools/test -Isrc \
+                -Wall -Wextra -Werror -Wno-unused-parameter \
+                -c "$f" -o /dev/null
+          done
+
+      - name: link the headless build
+        run: |
+          gcc -std=gnu11 -w -Itools/test -Isrc \
+              -o apeiron_headless src/*.c tools/test/sdl3_stub.c -lm
+
+      # Without assets/ the binary should say so and stop cleanly rather than crash. Exit status 1
+      # with a message is the expected outcome; a segfault (>= 128) is not.
+      - name: run it without assets and expect a clean refusal
+        run: |
+          set +e
+          NOAUDIO=1 LIMIT_MS=2000 ./apeiron_headless ./no-such-assets
+          status=$?
+          set -e
+          echo "exit status $status"
+          test "$status" -lt 128
+
+  python:
+    name: byte-compile the tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: compile every tool
+        run: python3 -m compileall -q tools
+
+  cmake:
+    name: configure without assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install SDL3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl3-dev || echo "no libsdl3-dev on this runner image"
+      # A fresh clone has no assets/, and the build must still succeed - the post-build copy used to
+      # fail the build outright in that case.
+      - name: cmake build
+        run: |
+          if pkg-config --exists sdl3; then
+            cmake -B build && cmake --build build
+          else
+            echo "SDL3 unavailable on the runner; skipping the SDL3 build"
+          fi

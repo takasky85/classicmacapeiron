@@ -10,7 +10,13 @@ Throughout the source, names in `[brackets]` are the functions in the decompiled
 
 ## Build and run
 
-Needs SDL3 3.2 or newer.
+**`assets/` is not in this repository.** It holds Ambrosia's artwork, fonts and sounds, lifted out
+of the game's own resource forks, so a clone starts without it and you make it from your own copy of
+Apeiron. Nothing builds or runs until you have:
+
+    python3 tools/extract_assets.py <the installed game folder> assets
+
+The build itself needs SDL3 3.2 or newer:
 
     cmake -B build && cmake --build build
     ./build/apeiron                 # or: ./build/apeiron path/to/assets
@@ -18,6 +24,13 @@ Needs SDL3 3.2 or newer.
 Without CMake:
 
     gcc src/*.c -o apeiron $(pkg-config --cflags --libs sdl3)
+
+The build succeeds whether or not `assets/` exists - CMake copies it beside the executable when it
+is there and tells you what to run when it is not - but the game itself stops at startup with
+`missing assets` until it can find them.
+
+To exercise the port without a display at all, there is a headless harness in `tools/test` that
+needs neither SDL3 nor a window; see [tools/test/README.md](tools/test/README.md).
 
 `tools/extract_assets.py` takes whichever of these you have and does the rest itself:
 

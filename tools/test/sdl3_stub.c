@@ -18,6 +18,8 @@ static int stream_ids, audio_on=1;
 static FILE *evlog;
 bool SDL_Init(SDL_InitFlags f){
   if(getenv("SNAP_EVERY")) snap_every=atoll(getenv("SNAP_EVERY"));
+  if(getenv("MOUSEX")) mousex=(float)atof(getenv("MOUSEX"));
+  if(getenv("MOUSEY")) mousey=(float)atof(getenv("MOUSEY"));
   if(getenv("LIMIT_MS")) limit=atoll(getenv("LIMIT_MS"));
   if(getenv("OUT_W")) OW=atoi(getenv("OUT_W"));
   if(getenv("OUT_H")) OH=atoi(getenv("OUT_H"));
@@ -30,6 +32,8 @@ const char *SDL_GetError(void){ return "stub"; }
 void SDL_Log(const char *fmt,...){ va_list a; va_start(a,fmt); printf("LOG: "); vprintf(fmt,a); printf("\n"); va_end(a); }
 bool SDL_CreateWindowAndRenderer(const char*t,int w,int h,SDL_WindowFlags f,SDL_Window**w_,SDL_Renderer**r){ *w_=(SDL_Window*)1; *r=(SDL_Renderer*)1; return true; }
 bool SDL_SetWindowMinimumSize(SDL_Window*w,int a,int b){ return true; }
+bool SDL_MaximizeWindow(SDL_Window*w){ return true; }
+bool SDL_SetWindowFullscreen(SDL_Window*w,bool f){ printf("[%llu ms] fullscreen=%d\n",(unsigned long long)now,f); return true; }
 bool SDL_GetRenderOutputSize(SDL_Renderer*r,int*w,int*h){ *w=OW; *h=OH; return true; }
 bool SDL_SetRenderDrawColor(SDL_Renderer*r,Uint8 R,Uint8 G,Uint8 B,Uint8 A){ drawcol=0xFF000000u|(R<<16)|(G<<8)|B; return true; }
 SDL_Texture *SDL_CreateTexture(SDL_Renderer*r,SDL_PixelFormat f,SDL_TextureAccess a,int w,int h){ SDL_Texture*t=calloc(1,sizeof *t); t->w=w;t->h=h;t->px=calloc((size_t)w*h,4); return t; }
@@ -51,21 +55,33 @@ void SDL_DestroyTexture(SDL_Texture*t){} void SDL_DestroyRenderer(SDL_Renderer*r
 /* scripted input: after 1s skip the intro with a click; at ~26s click "Play Apeiron"; then drive */
 static void script_update(void){
   if(!script) return;
-  memset(keys,0,sizeof keys); mbtn=0; mousex=mousey=-1;
+  memset(keys,0,sizeof keys); mbtn=0;
+  mousex=getenv("MOUSEX")?(float)atof(getenv("MOUSEX")):-1; mousey=getenv("MOUSEY")?(float)atof(getenv("MOUSEY")):-1;
+  if(script==2) return;
+  if(getenv("NOMENU")) return;
   if(now>26000){ /* in game: sweep left/right and hold fire */
     Uint64 t=(now-26000)/1000;
     if((t/2)%2==0) keys[SDL_SCANCODE_LEFT]=true; else keys[SDL_SCANCODE_RIGHT]=true;
     if(((now-26000)/150)%2==0) keys[SDL_SCANCODE_SPACE]=true;
     if(((now-26000)/3000)%4==3) keys[SDL_SCANCODE_UP]=true;
+    if(getenv("SPAWN")) keys[atoi(getenv("SPAWN"))] = (((now-26000)/700)%2==0);
   }
 }
 bool SDL_PollEvent(SDL_Event*e){
   script_update();
   if(script){
     if(clicks_done==0 && now>800){ clicks_done=1; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.x=320; e->button.y=240; printf("[%llu ms] click (skip intro)\n",(unsigned long long)now); return true; }
-    if(clicks_done==1 && now>25000){ clicks_done=2; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.x=460; e->button.y=42; printf("[%llu ms] click Play Apeiron\n",(unsigned long long)now); return true; }
+    if(clicks_done==1 && now>25000 && !getenv("NOMENU")){ clicks_done=2; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN;
+      e->button.x=getenv("CX")?atoi(getenv("CX")):460; e->button.y=getenv("CY")?atoi(getenv("CY")):42;
+      printf("[%llu ms] click menu (%g,%g)\n",(unsigned long long)now,e->button.x,e->button.y); return true; }
+    if(clicks_done==2 && getenv("CX2") && now>28000){ clicks_done=3; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN;
+      e->button.x=atoi(getenv("CX2")); e->button.y=getenv("CY2")?atoi(getenv("CY2")):0;
+      printf("[%llu ms] click 2 (%g,%g)\n",(unsigned long long)now,e->button.x,e->button.y); return true; }
+    if(clicks_done>=2 && script==2 && !getenv("CX2") && now>(Uint64)(30000+(clicks_done-2)*9000)){ clicks_done++; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.x=320; e->button.y=240; printf("[%llu ms] click page\n",(unsigned long long)now); return true; }
   }
-  return false; }
+  if(getenv("KEYSCRIPT") && !clicks_done && now>26000){ clicks_done=1; memset(e,0,sizeof *e);
+      e->type=SDL_EVENT_TEXT_INPUT; e->text.text=getenv("KEYSCRIPT"); printf("[%llu ms] typed %s\n",(unsigned long long)now,getenv("KEYSCRIPT")); return true; }
+  return false; }  /* KEYSCRIPT */
 Uint64 SDL_GetTicks(void){ return now; } void SDL_Delay(Uint32 ms){ now+=ms?ms:1; }
 const bool *SDL_GetKeyboardState(int *n){ if(n)*n=SDL_NUM_SCANCODES; return keys; }
 SDL_MouseButtonFlags SDL_GetMouseState(float*x,float*y){ if(x)*x=mousex; if(y)*y=mousey; return mbtn; }
@@ -94,3 +110,48 @@ bool SDL_FlushAudioStream(SDL_AudioStream*a){return true;}
 bool SDL_ResumeAudioStreamDevice(SDL_AudioStream*a){ if(a)a->start=now; return true; }
 int SDL_GetAudioStreamQueued(SDL_AudioStream*a){ if(!a) return 0; long el=(long)((now-a->start)*a->rate/1000); long q=a->total-el; return q>0?(int)q:0; }
 void SDL_DestroyAudioStream(SDL_AudioStream*a){ free(a); }
+
+SDL_Keymod SDL_GetModState(void){ static int n=0; if(getenv("CAPSAT")&&now>(Uint64)atoll(getenv("CAPSAT"))&&now<(Uint64)atoll(getenv("CAPSAT"))+3000){ (void)n; return SDL_KMOD_CAPS; } return 0; }
+bool SDL_HideCursor(void){ return true; }
+bool SDL_ShowCursor(void){ return true; }
+
+bool SDL_SetWindowRelativeMouseMode(SDL_Window *w, bool on){ (void)w; (void)on; return true; }
+unsigned int SDL_GetRelativeMouseState(float *x, float *y){
+  static float px=-1, py=-1;
+  float dx=0, dy=0;
+  if(mousex>=0 && px>=0){ dx=mousex-px; dy=mousey-py; }
+  px=mousex; py=mousey;
+  if(x)*x=dx; if(y)*y=dy; return 0;
+}
+
+void SDL_free(void *p){ free(p); }
+
+SDL_AudioDeviceID SDL_OpenAudioDevice(SDL_AudioDeviceID d, const SDL_AudioSpec *sp){ (void)d;(void)sp; return 0; }
+SDL_AudioStream *SDL_CreateAudioStream(const SDL_AudioSpec *a, const SDL_AudioSpec *b){ (void)a;(void)b; return 0; }
+bool SDL_BindAudioStream(SDL_AudioDeviceID d, SDL_AudioStream *s){ (void)d;(void)s; return true; }
+bool SDL_ClearAudioStream(SDL_AudioStream *s){ (void)s; return true; }
+bool SDL_SetAudioStreamFormat(SDL_AudioStream *s, const SDL_AudioSpec *a, const SDL_AudioSpec *b){ (void)s;(void)a;(void)b; return true; }
+bool SDL_RaiseWindow(SDL_Window *w){ (void)w; return true; }
+
+SDL_JoystickID *SDL_GetGamepads(int *n){ if(n)*n=0; return 0; }
+SDL_Gamepad *SDL_OpenGamepad(SDL_JoystickID i){ (void)i; return 0; }
+void SDL_CloseGamepad(SDL_Gamepad *g){ (void)g; }
+bool SDL_GamepadConnected(SDL_Gamepad *g){ (void)g; return false; }
+const char *SDL_GetGamepadName(SDL_Gamepad *g){ (void)g; return "none"; }
+short SDL_GetGamepadAxis(SDL_Gamepad *g, SDL_GamepadAxis a){ (void)g;(void)a; return 0; }
+bool SDL_GetGamepadButton(SDL_Gamepad *g, SDL_GamepadButton b){ (void)g;(void)b; return false; }
+
+bool SDL_SetHint(const char *a, const char *b){ (void)a;(void)b; return true; }
+bool SDL_ShowWindow(SDL_Window *w){ (void)w; return true; }
+bool SDL_SetWindowFocusable(SDL_Window *w, bool b){ (void)w;(void)b; return true; }
+bool SDL_FlashWindow(SDL_Window *w, SDL_FlashOperation o){ (void)w;(void)o; return true; }
+bool SDL_RestoreWindow(SDL_Window *w){(void)w;return true;}
+bool SDL_SetRenderVSync(SDL_Renderer *r,int v){(void)r;(void)v;return true;}
+bool SDL_SyncWindow(SDL_Window *w){(void)w;return true;}
+SDL_DisplayID SDL_GetDisplayForWindow(SDL_Window *w){(void)w;return 1;}
+bool SDL_GetDisplayUsableBounds(SDL_DisplayID d,SDL_Rect *r){(void)d;if(r){r->x=0;r->y=0;r->w=1920;r->h=1080;}return true;}
+bool SDL_SetWindowPosition(SDL_Window *w,int x,int y){(void)w;(void)x;(void)y;return true;}
+bool SDL_SetWindowSize(SDL_Window *w,int x,int y){(void)w;(void)x;(void)y;return true;}
+bool SDL_GetWindowSize(SDL_Window *w,int *x,int *y){(void)w;if(x)*x=640;if(y)*y=480;return true;}
+void SDL_PumpEvents(void){}
+SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *w){(void)w;return SDL_WINDOW_INPUT_FOCUS|SDL_WINDOW_MOUSE_FOCUS;}

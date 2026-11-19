@@ -1,0 +1,22 @@
+# Build output
+build/
+*.o
+*.obj
+*.exe
+apeiron
+apeiron_headless
+
+# The extracted artwork, fonts and sounds. These are Ambrosia Software's, lifted out of the game's
+# own resource forks by tools/extract_assets.py, and they are deliberately not committed: run that
+# script against your own copy of the game to produce them.
+assets/
+
+# The headless harness writes one PPM per presented frame.
+frames/
+
+# Settings the options screen saves at runtime.
+options.txt
+
+__pycache__/
+*.pyc
+.DS_Store
