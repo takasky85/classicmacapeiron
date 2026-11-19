@@ -1,0 +1,193 @@
+name: release
+
+# Builds the game for each desktop platform and attaches the results to a GitHub Release.
+#
+# Each build links SDL3 statically, so every artifact is a single executable with nothing beside it
+# - no SDL3.dll, no MinGW runtime, no libiconv. SDL is zlib-licensed, which allows that as long as
+# its notice travels along, so SDL's LICENSE.txt goes in each archive.
+#
+# No assets. assets/ holds Ambrosia Software's artwork, fonts and sounds, and it is not in this
+# repository and not in these builds: you make it from your own copy of Apeiron with
+# tools/extract_assets.py. The game looks for ./assets beside itself and takes a path as its first
+# argument, and without it stops at startup saying so.
+#
+# Trigger: push a tag (`git tag v0.1.0 && git push origin v0.1.0`), or run it by hand from the
+# Actions tab, which builds and uploads the artifacts without publishing a release.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish as a release (leave blank to only build artifacts)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            os: windows-latest
+            # The MSVC runtime is linked statically too, so the exe needs no redistributable.
+            cmake_extra: >-
+              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+              -DCMAKE_POLICY_DEFAULT_CMP0091=NEW
+            binary: apeiron.exe
+          - name: linux-x86_64
+            os: ubuntu-latest
+            cmake_extra: ''
+            binary: apeiron
+          - name: macos-universal
+            os: macos-latest
+            cmake_extra: '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+            binary: apeiron
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # SDL3 builds its video and audio backends against the system's development headers. Without
+      # these, SDL still configures but comes out with no working video driver on Linux.
+      - name: install SDL3's Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev \
+            libibus-1.0-dev libudev-dev libwayland-dev wayland-protocols \
+            libdecor-0-dev libxtst-dev
+
+      # SDL3's source is fetched by CMake, so caching it keeps a release build to a couple of
+      # minutes instead of re-cloning and rebuilding SDL every time.
+      - name: cache the SDL3 build
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: sdl3-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DAPEIRON_STATIC_SDL=ON
+          ${{ matrix.cmake_extra }}
+
+      - name: build
+        run: cmake --build build --config Release --parallel
+
+      # MSVC puts the executable in a per-configuration subdirectory; the single-config generators
+      # do not. Find it rather than guess.
+      - name: collect the artifact
+        shell: bash
+        run: |
+          set -e
+          exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
+          test -n "$exe" || { echo "no ${{ matrix.binary }} under build/"; find build -maxdepth 3 -type f | head -40; exit 1; }
+          echo "found $exe"
+
+          stage="apeiron-${{ matrix.name }}"
+          mkdir -p "$stage"
+          cp "$exe" "$stage/"
+          cp README.md "$stage/"
+          find build/_deps -name 'LICENSE.txt' -path '*sdl*' -exec cp {} "$stage/SDL-LICENSE.txt" \; || true
+
+          cat > "$stage/HOW-TO-RUN.txt" <<'TXT'
+          Apeiron - SDL3 port
+          ===================
+
+          This build does NOT include the game's artwork, fonts or sounds. Those are Ambrosia
+          Software's, and they live in the game's own resource forks - so you make them from your
+          own copy of Apeiron rather than downloading them from here:
+
+              python3 tools/extract_assets.py <the installed Apeiron folder> assets
+
+          Put the resulting "assets" folder beside this executable, or pass its path:
+
+              apeiron /some/where/assets
+
+          Without it the game stops at startup and says "missing assets".
+
+          The port and its tools are in this repository; see README.md.
+          SDL3 is linked statically and is zlib-licensed - see SDL-LICENSE.txt.
+          TXT
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$stage.zip" "$stage"
+          else
+            tar czf "$stage.tar.gz" "$stage"
+          fi
+          ls -la apeiron-*
+
+      - name: check the binary refuses a missing assets folder cleanly
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set +e
+          exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$exe" ./no-such-assets
+          status=$?
+          set -e
+          echo "exit status $status"
+          test "$status" -lt 128          # a message and a non-zero exit, not a crash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apeiron-${{ matrix.name }}
+          path: |
+            apeiron-*.zip
+            apeiron-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## What is in these downloads
+
+            One executable per platform, with SDL3 linked in. Nothing else is needed to run it -
+            no SDL3.dll, no MinGW runtime, no libiconv.
+
+            | | |
+            | - | - |
+            | `apeiron-windows-x86_64.zip` | Windows 10/11, 64-bit |
+            | `apeiron-linux-x86_64.tar.gz` | Linux, 64-bit |
+            | `apeiron-macos-universal.tar.gz` | macOS, Apple silicon and Intel |
+
+            ## What is NOT in them
+
+            **The game's artwork, fonts and sounds.** Those are Ambrosia Software's, and this port
+            reads them out of the game's own resource forks rather than shipping copies. Make them
+            from your own copy of Apeiron:
+
+            ```
+            python3 tools/extract_assets.py <the installed Apeiron folder> assets
+            ```
+
+            Put the `assets` folder beside the executable, or pass its path as the first argument.
+            Without it the game stops at startup and says `missing assets`.
