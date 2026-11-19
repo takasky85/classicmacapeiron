@@ -120,6 +120,7 @@ void draw_image_clipped(const Image *im, int x0, int y0, int cx, int cy, int cw,
 void draw_sprite(const Sprite *s, int frame, int x, int y);        /* frame is 1-based, as in the original */
 void draw_sprite_key(const Sprite *s, int frame, int x, int y, uint8_t key);
 void draw_sprite_clipped(const Sprite *s, int frame, int x, int y, int cx, int cy, int cw, int ch);
+void draw_sprite_disc(const Sprite *s, int frame, int x, int y, int cx, int cy, int cw, int ch);
 void fill_rect(int x, int y, int w, int h, uint8_t c);
 void draw_line(int x0, int y0, int x1, int y1, uint8_t c);
 void tile_pattern(const Image *pat, int x, int y, int w, int h);
@@ -188,7 +189,8 @@ enum {
 extern bool cheat[CH_COUNT];
 
 /* enhancements beyond the original, each switchable on the Options screen */
-enum { ENH_WEAPON_FLY = 0, ENH_WEAPON_ANIM, ENH_ATTRACT, ENH_NO_PSYC, ENH_COUNT };
+enum { ENH_WEAPON_FLY = 0, ENH_WEAPON_ANIM, ENH_ATTRACT, ENH_NO_PSYC, ENH_TALLY_PICKUP,
+       ENH_COUNT };
 /* Stamped into the title screen so a build can be told apart from the one before it. */
 #define APEIRON_BUILD (__DATE__ " " __TIME__)
 extern bool enh[ENH_COUNT];
@@ -211,6 +213,8 @@ void do_help(void);                       /* [DoHelp]: the game's three instruct
 void do_about(void);                      /* [DoAbout]: DLOG 150 */
 void do_options(void);                    /* not in the original: packs and cheats */
 void dialog_frame(int bx, int by, int bw, int bh, uint8_t face, uint8_t edge);
+void dialog_button(int x, int y, int w, const char *label, uint8_t face, uint8_t edge,
+                   bool dflt, bool hilite);
 void dialog_ok(int x, int y, int w, uint8_t face, uint8_t edge);
 void dialog_ok_hilite(int x, int y, int w, uint8_t face, uint8_t edge, bool hilite);
 void dialog_ok_press(int x, int y, int w, uint8_t face, uint8_t edge);

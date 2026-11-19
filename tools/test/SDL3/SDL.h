@@ -30,13 +30,13 @@ typedef enum {
     SDL_SCANCODE_UNKNOWN = 0, SDL_SCANCODE_A = 4, SDL_SCANCODE_D = 7, SDL_SCANCODE_F1 = 58, SDL_SCANCODE_F2 = 59, SDL_SCANCODE_F3 = 60, SDL_SCANCODE_F4 = 61,
     SDL_SCANCODE_F5 = 62, SDL_SCANCODE_F6 = 63, SDL_SCANCODE_F7 = 64, SDL_SCANCODE_F8 = 65,
     SDL_SCANCODE_M = 16, SDL_SCANCODE_N = 17, SDL_SCANCODE_S = 22,
-    SDL_SCANCODE_W = 26, SDL_SCANCODE_X = 27, SDL_SCANCODE_RETURN = 40, SDL_SCANCODE_ESCAPE = 41,
+    SDL_SCANCODE_W = 26, SDL_SCANCODE_X = 27, SDL_SCANCODE_RETURN = 40, SDL_SCANCODE_KP_ENTER = 88, SDL_SCANCODE_ESCAPE = 41,
     SDL_SCANCODE_SPACE = 44, SDL_SCANCODE_RIGHT = 79, SDL_SCANCODE_LEFT = 80,
     SDL_SCANCODE_DOWN = 81, SDL_SCANCODE_UP = 82, SDL_SCANCODE_LCTRL = 224, SDL_SCANCODE_RCTRL = 228,
     SDL_NUM_SCANCODES = 512
 } SDL_Scancode;
 enum { SDL_EVENT_QUIT = 0x100, SDL_EVENT_KEY_DOWN = 0x300, SDL_EVENT_TEXT_INPUT = 0x303,
-       SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401,
+       SDL_EVENT_MOUSE_MOTION = 0x400, SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401,
        SDL_EVENT_WINDOW_FOCUS_GAINED = 0x20d, SDL_EVENT_WINDOW_FOCUS_LOST = 0x20e };
 typedef struct { Uint8 r, g, b, a; } SDL_Color;
 typedef struct { int ncolors; SDL_Color *colors; } SDL_Palette;
@@ -44,8 +44,9 @@ typedef struct SDL_Surface { SDL_PixelFormat format; int w, h, pitch; void *pixe
 typedef struct { SDL_AudioFormat format; int channels; int freq; } SDL_AudioSpec;
 typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint32 scancode; SDL_Keycode key; } SDL_KeyboardEvent;
 typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint8 button, down; Uint8 clicks, pad2; float x, y; } SDL_MouseButtonEvent;
+typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint32 state; float x, y, xrel, yrel; } SDL_MouseMotionEvent;
 typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid; const char *text; } SDL_TextInputEvent;
-typedef union SDL_Event { Uint32 type; SDL_KeyboardEvent key; SDL_MouseButtonEvent button; SDL_TextInputEvent text; Uint8 padding[128]; } SDL_Event;
+typedef union SDL_Event { Uint32 type; SDL_KeyboardEvent key; SDL_MouseButtonEvent button; SDL_MouseMotionEvent motion; SDL_TextInputEvent text; Uint8 padding[128]; } SDL_Event;
 typedef struct { int x, y, w, h; } SDL_Rect; typedef struct { float x, y, w, h; } SDL_FRect;
 bool SDL_Init(SDL_InitFlags); bool SDL_InitSubSystem(SDL_InitFlags); void SDL_Quit(void); const char *SDL_GetError(void);
 void SDL_Log(const char *fmt, ...);
@@ -121,6 +122,7 @@ typedef unsigned int SDL_DisplayID;
 bool SDL_SetRenderVSync(SDL_Renderer *, int);
 bool SDL_SyncWindow(SDL_Window *);
 SDL_DisplayID SDL_GetDisplayForWindow(SDL_Window *);
+SDL_DisplayID SDL_GetPrimaryDisplay(void);
 bool SDL_GetDisplayUsableBounds(SDL_DisplayID, SDL_Rect *);
 bool SDL_SetWindowPosition(SDL_Window *, int, int);
 bool SDL_SetWindowSize(SDL_Window *, int, int);
