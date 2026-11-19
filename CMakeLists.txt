@@ -11,7 +11,11 @@ set(CMAKE_C_STANDARD 11)
 # result is one executable that needs no SDL3.dll, no MinGW runtime and no libiconv beside it. SDL
 # is zlib-licensed, so static linking carries no condition beyond keeping its notice.
 option(APEIRON_STATIC_SDL "Link the fetched SDL3 statically into one self-contained executable" OFF)
-set(APEIRON_SDL_TAG "release-3.2.10" CACHE STRING "SDL3 tag to fetch when none is installed")
+# release-3.2.10 steered the shooter backwards on Linux (#33), and it was SDL's bug, not ours: its
+# X11 XInput2 backend turns a pointer whose axes report as *absolute* - which is what you get in a
+# VM, over VNC, and under XWayland - into relative motion with the sign the wrong way round, so
+# both axes came out inverted. Upstream fixed it on the 3.4 branch (libsdl-org/SDL#14926).
+set(APEIRON_SDL_TAG "release-3.4.20" CACHE STRING "SDL3 tag to fetch when none is installed")
 
 find_package(SDL3 CONFIG QUIET)
 if(SDL3_FOUND)

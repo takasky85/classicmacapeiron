@@ -13,6 +13,7 @@
  * The original is a linked list of sprites across several layers; this uses one entity array, which
  * behaves the same but is easier to follow. Positions are 16.16 fixed point as in the original.
  */
+#include <math.h>
 #include "apeiron.h"
 
 /* ---- tunables read from the decompile ------------------------------------------------------- */
@@ -87,10 +88,12 @@ static bool player_dead;
 static int  death_tick;
 static int  level_bonus;
 static int  flea_chain;                    /* [ShotHitCheck]: doubles with each flea killed */
+static long flea_next;                     /* DAT_1001dab8: ten ticks after the last one died */
 static int  flea_threshold;
 static int  sidefeed_period, sidefeed_last;
 static bool pede_hit_bottom;               /* armed when a head first reaches the floor */
 static int  psyc_at, mult_at, fodder_at, scorp_at, gecko_at;
+static bool scorp_warned;                  /* his arrival is announced thirty ticks early */
 static int  psyc_until;
 static int  psyc_phase;                    /* DAT_1001da50: which of the three tables is up */
 static int  psyc_next;                     /* DAT_1001da58: the tick the next swap is due */
@@ -318,6 +321,7 @@ enum { D_LEFT = 1, D_RIGHT = 2, D_UP = 3, D_DOWN = 4 };
 
 static void pede_kill(Ent *e, bool by_shot);
 static void start_level(void);
+static void take_yummie(Ent *e);
 
 static void pede_trail_push(Ent *e)
 {
@@ -408,6 +412,18 @@ static Ent *pede_facing(Ent *e, uint8_t their_dir)
 static void pede_head_step(Ent *e)
 {
     int x = e->ix, y = e->iy, sp = pede_speed;
+
+    /* [PedeMoveProc] keeps two directions: +132 is what the head is doing now and +133 is what it
+     * does next, and every transition out of a vertical move is `dir = dir2`. That only terminates
+     * because dir2 holds a *horizontal* whenever dir is vertical. If the pair is ever vertical and
+     * vertical together, `dir = dir2` is a no-op and x can never change again: the head bobs up and
+     * down on the spot until the wave ends, which is what sticking to a side wall looks like (#26).
+     * Walking the reachable states from the three birth states says the pair cannot come apart on
+     * its own, but a chain relinked by a kill copies dir and dir2 out of a dead leader's trail, so
+     * the invariant is restored here rather than trusted. The head then carries on away from
+     * whichever wall it is nearer, which is where its next turn would have sent it anyway. */
+    if ((e->dir == D_UP || e->dir == D_DOWN) && (e->ndir == D_UP || e->ndir == D_DOWN))
+        e->ndir = (x <= (PEDE_XMIN + PEDE_XMAX) / 2) ? D_RIGHT : D_LEFT;
 
     switch (e->dir) {
     case D_UP:
@@ -575,18 +591,21 @@ static void create_flea(void)               /* [CreateFlea] */
     sfx(SND_GROUCHO_LAUGH);           /* [FleaDescentCheck] plays snd 140 with [CreateFlea] */
 }
 
-static void create_scorpion(void)           /* Larry, who drifts up and down eating mushrooms */
+/* Larry, who drifts up and down eating mushrooms - the 'scor' sprite at DAT_1001dc8c. Which side
+ * he comes in from is decided by the wave's parity: on an even wave one roll of four in his favour
+ * sends him in from the left, and on an odd wave three of them do, so he comes from the left three
+ * times in four for most of a game. */
+static void create_scorpion(void)
 {
     Ent *e = ent_new(E_SCORP);
     if (!e) return;
-    bool from_left = rnd(4) != 0;
-    e->x = from_left ? 0 : FIX(FIELD_W - 25);
-    e->y = FIX((player_speed + rnd(28 - player_speed)) * CELL);
-    if (e->y > FIX(FIELD_H - 32)) e->y = FIX(FIELD_H - 32);
+    int row = player_speed + rnd(28 - player_speed);    /* DAT_1001dad0 + FastRandom(0x1c - it) */
+    bool from_left = (wave % 2 == 0) ? (rnd(4) == 0) : (rnd(4) != 0);
+    e->x = from_left ? 0 : FIX(0x198);
+    e->y = FIX(row * CELL);
     int sp = score < 5000 ? 3 : 4;
     e->vx = FIX(from_left ? sp : -sp);
     e->vy = FIX(sp);
-    sfx(SND_SCORP_APPEARS);
 }
 
 static void create_gecko(void)              /* Gordon, who walks across poisoning what he crosses */
@@ -595,8 +614,12 @@ static void create_gecko(void)              /* Gordon, who walks across poisonin
     if (!e) return;
     e->x = FIX(0x186);
     e->y = FIX(rnd(0x11) * CELL);
-    /* [GeckoMoveProc] does x -= vx, so a positive vx walks him leftwards off the field */
-    e->vx = FIX(score > 20000 && rnd(4) != 1 ? 5 : 3);
+    /* [GeckoMoveProc] does x -= vx, so a positive vx walks him leftwards off the field. The second
+     * roll is made whatever the score is - it only has an effect above twenty thousand, but it
+     * comes out of the same random sequence either way, so it is made either way. */
+    int v = score > 20000 ? 5 : 3;
+    if (rnd(4) == 1) v = 3;
+    e->vx = FIX(v);
     sfx(SND_GECKO_APPEARS);
 }
 
@@ -787,6 +810,7 @@ static void start_level(void)
     shots_out = 0;
     last_shot = 0;
     flea_chain = 200;
+    flea_next = 60;
     sidefeed_last = 0;
     pede_hit_bottom = false;
     ent_clear(E_PEDE); ent_clear(E_SHOT); ent_clear(E_FLEA); ent_clear(E_SCORP);
@@ -841,13 +865,17 @@ static void start_level(void)
         pede_left++;
     }
 
-    /* [StartLevel] schedules the wave's extras with the same dice the original rolls */
-    psyc_at = mult_at = fodder_at = scorp_at = gecko_at = 0;
+    /* [StartLevel] schedules the wave's extras with the same dice the original rolls, in the order
+     * it rolls them - FastRandom is one sequence, so a roll skipped here moves every later one.
+     * Larry is deliberately not among them: DAT_1001dacc survives a wave change. */
+    psyc_at = mult_at = fodder_at = gecko_at = 0;
     if (rnd(10) == 1) psyc_at = rnd(30) * 60 + 120;
     if (rnd(3) == 1) mult_at = rnd(30) * 60 + 120;
     if (rnd(3) == 1) fodder_at = rnd(30) * 60 + 120;
-    if (rnd(4) == 1 && extra_heads >= 3) scorp_at = rnd(20) * 60 + 120;
-    gecko_at = rnd(360) + 360;
+    /* Gordon's roll is made whatever the mushroom colour is and thrown away afterwards if the
+     * colour is one of the first three of its group, which is how the original does it. */
+    if (rnd(4) == 1) gecko_at = rnd(20) * 60 + 120;
+    if (shroom_level < 3) gecko_at = 0;
 }
 
 /* ---- drawing ---------------------------------------------------------------------------------- */
@@ -962,8 +990,8 @@ static void draw_frame(void)
             /* [ShieldMoveProc] snaps the shell to the shooter's own position every frame - the
              * five-pixel lift in [MakeInvincible] is only where it starts - and [ShieldFrameProc]
              * steps it a frame a frame, so it sits exactly over the crystal and covers it. */
-            draw_sprite_clipped(&A.shield, 1 + player_anim % A.shield.count,
-                                FIELD_X + FIX_WHOLE(px), FIELD_Y + FIX_WHOLE(py), CLIP);
+            draw_sprite_disc(&A.shield, 1 + player_anim % A.shield.count,
+                             FIELD_X + FIX_WHOLE(px), FIELD_Y + FIX_WHOLE(py), CLIP);
     }
 
     /* [GameWindowUpdate]: pattern 401 behind, the ScoreMatt panel (PICT 401) beside the field, and
@@ -1087,6 +1115,7 @@ static void shot_hits(Ent *t)
                 create_points(t->x, t->y, flea_chain * mult, false);
                 create_expl(t->x, t->y, EX_FLEA);   /* [ShotHitCheck]'s 'flea' branch: PICT 1012 */
                 flea_chain <<= 1;
+                flea_next = ticks + 10;             /* DAT_1001dab8 = DAT_1001da90 + 10 */
                 t->alive = false;
             }
             break;
@@ -1332,7 +1361,9 @@ static void update_entities(void)
                 shroom[col][row] = 1;
                 sfx(SND_SPLUT);
             }
-            if (FIX_WHOLE(e->x) <= 0) { e->alive = false; gecko_at = ticks + rnd(360) + 180; }
+            /* [GeckoMoveProc] only hides him at the far side - he gets no new appointment, so
+             * Gordon crosses at most once in a wave. */
+            if (FIX_WHOLE(e->x) <= 0) e->alive = false;
             break;
         }
 
@@ -1530,11 +1561,34 @@ static void house_keeping(void)
     if (psyc_at && ticks > psyc_at) { psyc_at = 0; create_psychadelic(); }
     if (mult_at && ticks > mult_at) { mult_at = 0; create_multiplier(); }
     if (fodder_at && ticks > fodder_at) { fodder_at = 0; create_fodder(); }
-    if (scorp_at && ticks > scorp_at) { scorp_at = 0; create_scorpion(); }
+    /* Gordon's one appearance per wave, if the wave rolled him one at all: DAT_1001dabc, zeroed as
+     * it fires, and only ever set on a wave whose mushroom colour is at least the fourth of its
+     * group. This port had the two of them crossed - the dice below were driving Larry and
+     * Gordon was on Larry's schedule, which is why the scobster hardly ever turned up (#25). */
     if (gecko_at && ticks > gecko_at) { gecko_at = 0; create_gecko(); }
 
-    /* [FleaDescentCheck]: a flea when the player's zone is running out of mushrooms */
-    if (!player_dead && shrooms_in_player_zone() < flea_threshold && ticks > 60) {
+    /* Larry is not scheduled by the wave at all. DAT_1001dacc is only ever written where he is
+     * shot, as `now + FastRandom(0x168) + 0x168`, and nothing initialises it or clears it between
+     * waves - so he is there from the first frame of a new game, and twelve to twenty-four seconds
+     * after each time he is killed, for as long as there is no scobster on the field already. The
+     * sound is his arrival being announced thirty ticks early, not the arrival itself. */
+    bool scorp_out = false;
+    for (int i = 0; i < MAX_ENT; i++)
+        if (ent[i].alive && ent[i].type == E_SCORP) { scorp_out = true; break; }
+    if (!scorp_out) {
+        if (ticks > scorp_at - 30 && !scorp_warned) { scorp_warned = true; sfx(SND_SCORP_APPEARS); }
+        if (ticks > scorp_at) { scorp_warned = false; create_scorpion(); }
+    }
+
+    /* [FleaDescentCheck]: a flea when the player's zone is running out of mushrooms. All four
+     * conditions, in the order the original tests them:
+     *     DAT_1001da88 < DAT_1001dab4   mushrooms in rows 18..29 under the score's threshold
+     *     DAT_1001dab8 < DAT_1001da90   ten ticks since the last one was killed
+     *     DAT_1001dab2 == 0             none already out
+     *     DAT_1001da8a != 0             and never on a wave whose mushroom colour is the first
+     * of its group - waves 1, 12, 23 and so on have no fleas at all, which this port was missing. */
+    if (!player_dead && shrooms_in_player_zone() < flea_threshold &&
+        ticks > flea_next && shroom_level != 0) {
         bool flea_out = false;
         for (int i = 0; i < MAX_ENT; i++) if (ent[i].alive && ent[i].type == E_FLEA) { flea_out = true; break; }
         if (!flea_out) { flea_chain = 200; create_flea(); }
@@ -1641,38 +1695,7 @@ static void house_keeping(void)
         bool touching = hit_box(e, w, h, px, py, 16, 16);
         if (!touching) continue;
         if (e->type == E_YUMMIE) {
-            /* [GameHouseKeeping] runs FastRandom(7) and jumps through a table of seven: the five
-             * power-ups, an extra shooter, and WasteShrooms. "Got Yummie" plays for all but the
-             * extra shooter, which has a sound of its own. */
-            e->alive = false;
-            int roll = rnd(7);
-            if (roll != 2) sfx(SND_GOT_YUMMIE);
-            int slot = -1, box = -1;
-            switch (roll) {
-            case 0: slot = PW_CURVE; break;
-            case 1: slot = PW_FREEMOVE; break;
-            case 2:                                   /* an extra shooter, capped at eight */
-                if (lives < 8) { lives++; sfx(SND_EXTRA_SHIP); box = FLY_LIFE; }
-                else sfx(SND_MISSED_IT);
-                break;
-            case 3: slot = PW_MACHINEGUN; break;
-            case 4: slot = PW_SHIELD; break;          /* [MakeInvincible] */
-            case 5: waste_shrooms(); break;           /* [WasteShrooms] */
-            default: slot = PW_LOCK; break;
-            }
-            if (slot >= 0) box = FLY_WEAPON;
-            /* the icon arcs over to whichever box it belongs in, and only lands in that box when
-             * it gets there - unless one of the same kind was already running */
-            if (enh[ENH_WEAPON_FLY] && box >= 0) {
-                /* the coin's slot is free now, so ent_new can hand back this very entity with its
-                 * position already wiped - read where it was before asking for a new one */
-                fix_t fx = e->x, fy = e->y;
-                /* a sixth life changes nothing in a box that only shows five */
-                bool room = box != FLY_LIFE || lives <= 8;
-                bool hides = box != FLY_WEAPON || powerup[slot] <= 0;
-                if (room) fly_icon(box, slot, fx, fy, hides);
-            }
-            if (slot >= 0) powerup[slot] = POWERUP_FRAMES;
+            take_yummie(e);
             continue;
         }
         /* [GameHouseKeeping] tests the shooter against two layers. DAT_1001db48 holds 'phed' and
@@ -1694,12 +1717,67 @@ static void house_keeping(void)
     }
 }
 
+/* The pickup itself, split out of the collision pass so the end-of-wave tally can run it too: a
+ * coin that reaches the shooter while the bonus is counting off used to fall straight through it
+ * (#26). The original does not check for it there - [TallyBonus] keeps animating and compositing
+ * but never calls [GameHouseKeeping] - so this is on the Enhancements page. */
+static void take_yummie(Ent *e)
+{
+    /* [GameHouseKeeping] runs FastRandom(7) and jumps through a table of seven: the five
+     * power-ups, an extra shooter, and WasteShrooms. "Got Yummie" plays for all but the
+     * extra shooter, which has a sound of its own. */
+    e->alive = false;
+    int roll = rnd(7);
+    if (roll != 2) sfx(SND_GOT_YUMMIE);
+    int slot = -1, box = -1;
+    switch (roll) {
+    case 0: slot = PW_CURVE; break;
+    case 1: slot = PW_FREEMOVE; break;
+    case 2:                                   /* an extra shooter, capped at eight */
+        if (lives < 8) { lives++; sfx(SND_EXTRA_SHIP); box = FLY_LIFE; }
+        else sfx(SND_MISSED_IT);
+        break;
+    case 3: slot = PW_MACHINEGUN; break;
+    case 4: slot = PW_SHIELD; break;          /* [MakeInvincible] */
+    case 5: waste_shrooms(); break;           /* [WasteShrooms] */
+    default: slot = PW_LOCK; break;
+    }
+    if (slot >= 0) box = FLY_WEAPON;
+    /* the icon arcs over to whichever box it belongs in, and only lands in that box when
+     * it gets there - unless one of the same kind was already running */
+    if (enh[ENH_WEAPON_FLY] && box >= 0) {
+        /* the coin's slot is free now, so ent_new can hand back this very entity with its
+         * position already wiped - read where it was before asking for a new one */
+        fix_t fx = e->x, fy = e->y;
+        /* a sixth life changes nothing in a box that only shows five */
+        bool room = box != FLY_LIFE || lives <= 8;
+        bool hides = box != FLY_WEAPON || powerup[slot] <= 0;
+        if (room) fly_icon(box, slot, fx, fy, hides);
+    }
+    if (slot >= 0) powerup[slot] = POWERUP_FRAMES;
+}
+
+/* The coins that are still falling when the wave ends. Only the pickup runs here - nothing in the
+ * tally can take a shooter, which is why this is not the whole collision pass. */
+static void tally_pickups(void)
+{
+    if (!enh[ENH_TALLY_PICKUP] || player_dead) return;
+    for (int i = 0; i < MAX_ENT; i++) {
+        Ent *e = &ent[i];
+        if (!e->alive || e->type != E_YUMMIE) continue;
+        if (hit_box(e, 14, 14, px, py, 16, 16)) take_yummie(e);
+    }
+}
+
 /* The demo's hand on the mouse. It picks a point to be at and gives back the pixel movement
  * towards it, with a little momentum, so the shooter drifts and overshoots the way a hand does
  * rather than stepping along the axes. */
 static void demo_move(float *mx, float *my)
 {
     static float vx, vy;
+    static float reach_sx, reach_sy, reach_gx, reach_gy, reach_t, reach_dur = 1.0f;
+    static float wander_y;
+    static long  reach_hold, wander_at;
     int ix = FIX_WHOLE(px), iy = FIX_WHOLE(py);
     float wantx = (float)ix, wanty = (float)(SHOOTER_YMAX - 8);
     int best = 1 << 30, coin = 1 << 30, flee = 0;
@@ -1726,16 +1804,53 @@ static void demo_move(float *mx, float *my)
         }
     }
     if (flee) wantx = (float)ix + flee * 70.0f;
+
+    /* Nobody parks on the bottom edge for a whole wave. With nothing to chase, the hand wanders
+     * slowly through the band the shooter is allowed, which is 96 pixels tall. */
+    if (coin == 1 << 30 && !flee) {
+        if (ticks > wander_at) {
+            wander_at = ticks + 90 + rnd(150);
+            wander_y = (float)(SHOOTER_TOP + rnd(SHOOTER_YMAX - SHOOTER_TOP));
+        }
+        wanty = wander_y;
+    }
     if (wantx < 0) wantx = 0;
     if (wantx > FIELD_W - 16) wantx = FIELD_W - 16;
 
-    /* a damped spring towards the target: the drift and overshoot are what read as a hand */
-    vx = vx * 0.72f + (wantx - ix) * 0.18f;
-    vy = vy * 0.72f + (wanty - iy) * 0.14f;
-    if (vx > 12) vx = 12;
-    if (vx < -12) vx = -12;
-    if (vy > 10) vy = 10;
-    if (vy < -10) vy = -10;
+    /* A hand on a mouse does not track a target continuously - it flicks, stops, corrects, and
+     * sits still between moves, and the flick itself starts slow, runs fast and eases out. So the
+     * motion is a reach: a new one starts when the target has moved away from where this one was
+     * going, or when the dwell after the last one has run out, and it lasts longer the further it
+     * has to go. Inside a reach the speed follows the derivative of a smoothstep, which is what
+     * gives the ease at both ends; between reaches there is only a little jitter, because a hand
+     * resting on a mouse is never quite still. The spring this replaces moved all the time and at
+     * a speed that only depended on the distance left, which is what read as mechanical (#26). */
+    float distx = wantx - reach_gx, disty = wanty - reach_gy;
+    bool stale = distx * distx + disty * disty > 20.0f * 20.0f;
+    if (reach_t >= reach_dur && (stale || ticks > reach_hold)) {
+        reach_sx = (float)ix; reach_sy = (float)iy;
+        reach_gx = wantx;     reach_gy = wanty;
+        float d = fabsf(wantx - ix) + fabsf(wanty - iy);
+        reach_dur = 4.0f + d * 0.055f;                 /* further is slower, as a hand is */
+        if (flee) reach_dur *= 0.45f;                  /* except when getting out of the way */
+        reach_t = 0.0f;
+        reach_hold = ticks + 3 + rnd(flee ? 2 : 14);   /* the pause after arriving */
+    } else if (stale && flee) {
+        reach_gx = wantx; reach_gy = wanty;            /* a dodge redirects a reach in flight */
+    }
+
+    float was_x = reach_sx, was_y = reach_sy, prev = reach_t / reach_dur;
+    reach_t += 1.0f;
+    if (reach_t > reach_dur) reach_t = reach_dur;
+    float now = reach_t / reach_dur;
+    /* smoothstep between the two ends, differenced to get this frame's movement */
+    float p0 = prev * prev * (3.0f - 2.0f * prev), p1 = now * now * (3.0f - 2.0f * now);
+    vx = (reach_gx - was_x) * (p1 - p0);
+    vy = (reach_gy - was_y) * (p1 - p0);
+    if (reach_t >= reach_dur) {                        /* resting: just the tremor */
+        vx += (float)(rnd(3) - 1) * 0.5f;
+        vy += (float)(rnd(3) - 1) * 0.4f;
+    }
     *mx = vx; *my = vy;
 }
 
@@ -1813,6 +1928,7 @@ static void idle_frame(void)
     if (!player_dead) move_player();
     else { float a, b; mouse_delta(&a, &b); }   /* keep the deltas from piling up */
     update_entities();
+    tally_pickups();
     draw_frame();
     set_entries();
     if (key_down(SDL_SCANCODE_ESCAPE)) quit_to_title = true;
@@ -2262,6 +2378,8 @@ void run_attract(void)
 
 void new_game(void)                          /* [NewGame] */
 {
+    scorp_at = 0;                            /* DAT_1001dacc: Larry is due from the first frame */
+    scorp_warned = false;
     quit_to_title = false;
     score = 0; next_extra = 20000;
     lives = 3; mult = 1;               /* [NewGame]: DAT_1001da70 = 3, plus the one on the field */

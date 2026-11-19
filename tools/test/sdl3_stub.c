@@ -149,6 +149,7 @@ bool SDL_RestoreWindow(SDL_Window *w){(void)w;return true;}
 bool SDL_SetRenderVSync(SDL_Renderer *r,int v){(void)r;(void)v;return true;}
 bool SDL_SyncWindow(SDL_Window *w){(void)w;return true;}
 SDL_DisplayID SDL_GetDisplayForWindow(SDL_Window *w){(void)w;return 1;}
+SDL_DisplayID SDL_GetPrimaryDisplay(void){return 1;}
 bool SDL_GetDisplayUsableBounds(SDL_DisplayID d,SDL_Rect *r){(void)d;if(r){r->x=0;r->y=0;r->w=1920;r->h=1080;}return true;}
 bool SDL_SetWindowPosition(SDL_Window *w,int x,int y){(void)w;(void)x;(void)y;return true;}
 bool SDL_SetWindowSize(SDL_Window *w,int x,int y){(void)w;(void)x;(void)y;return true;}

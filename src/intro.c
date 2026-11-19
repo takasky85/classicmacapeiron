@@ -485,15 +485,23 @@ void dialog_frame(int bx, int by, int bw, int bh, uint8_t face, uint8_t edge)
  * button is a round rect with ovalWidth and ovalHeight 16, and SetDialogDefaultItem frames a second
  * one three pixels thick, four pixels outside it. `hilite` is the pressed state: HiliteControl
  * inverts the button's own area while the mouse is held in it. */
-void dialog_ok_hilite(int x, int y, int w, uint8_t face, uint8_t edge, bool hilite)
+void dialog_button(int x, int y, int w, const char *label, uint8_t face, uint8_t edge,
+                   bool dflt, bool hilite)
 {
     uint8_t body = hilite ? edge : face, ink = hilite ? face : edge;
-    fill_round_rect(x - 4, y - 4, w + 8, 28, 12, edge);           /* the default item's ring */
+    /* SetDialogDefaultItem's ring belongs to the default item only; a plain button is just the
+     * round rect. The ring is drawn in the dialog's own face colour underneath either way, so
+     * whatever was behind the button does not show through the corners. */
+    fill_round_rect(x - 4, y - 4, w + 8, 28, 12, dflt ? edge : face);
     fill_round_rect(x - 1, y - 1, w + 2, 22, 9, face);
     fill_round_rect(x, y, w, 20, 8, edge);
     fill_round_rect(x + 1, y + 1, w - 2, 18, 8, body);
-    const char *ok = "OK";
-    draw_text(&A.chicago12, x + (w - text_width(&A.chicago12, ok, 0)) / 2, y + 14, ok, ink, 0);
+    draw_text(&A.chicago12, x + (w - text_width(&A.chicago12, label, 0)) / 2, y + 14, label, ink, 0);
+}
+
+void dialog_ok_hilite(int x, int y, int w, uint8_t face, uint8_t edge, bool hilite)
+{
+    dialog_button(x, y, w, "OK", face, edge, true, hilite);
 }
 
 void dialog_ok(int x, int y, int w, uint8_t face, uint8_t edge)
@@ -702,6 +710,8 @@ static int page_rows(int page, Row *r, int max)
             "the game plays itself if the title is left alone");
         ADD(ROW_CHECK, 6, ENH_NO_PSYC, "No screen flashing",
             "keeps the psychedelic mushroom's colour cycling off");
+        ADD(ROW_CHECK, 6, ENH_TALLY_PICKUP, "Coins count during the tally",
+            "a coin that reaches you while the bonus counts off is yours");
         ADD(ROW_VALUE, 9, 0, "Starting wave", NULL);
         ADD(ROW_NOTE, 0, 0, "Starting past the first forfeits the high score.", NULL);
         ADD(ROW_NOTE, 0, 0, "Still to come: a Mac OS boot screen on the way in.", NULL);
@@ -762,6 +772,45 @@ static void row_toggle(const Row *r)
 
 #define OPT_MAX_ROWS 24
 static const int TAB_Y = 56, TAB_H = 20, ROW_Y0 = 96, ROW_DY = 20, ROW_X = 40;
+
+/* OK and Cancel (#26). A Mac dialog puts them bottom right, the default item rightmost, so that is
+ * where they go: 67x20 push buttons, 12 apart, 24 in from the right edge and 30 up from the bottom.
+ * Cancel puts back everything the screen can change, which means every setting has to be copied on
+ * the way in - including the artwork pack, which is reloaded rather than just remembered. */
+static const int BTN_W = 67, BTN_H = 20, BTN_Y = SCREEN_H - 50;
+#define BTN_OK_X     (SCREEN_W - 24 - BTN_W)
+#define BTN_CANCEL_X (BTN_OK_X - 12 - BTN_W)
+
+typedef struct {
+    int  scale, deadzone, start_wave, pack;
+    bool mouse, keyboard, pad, maximize, spawn;
+    bool cheat[CH_COUNT], enh[ENH_COUNT];
+} OptSnapshot;
+
+static void opt_snapshot(OptSnapshot *s)
+{
+    s->scale = opt_scale; s->deadzone = opt_pad_deadzone; s->start_wave = opt_start_wave;
+    s->pack = assets_pack();
+    s->mouse = opt_mouse; s->keyboard = opt_keyboard; s->pad = opt_pad;
+    s->maximize = opt_maximize; s->spawn = debug_spawn;
+    memcpy(s->cheat, cheat, sizeof s->cheat);
+    memcpy(s->enh, enh, sizeof s->enh);
+}
+
+static void opt_restore(const OptSnapshot *s)
+{
+    opt_scale = s->scale; opt_pad_deadzone = s->deadzone; opt_start_wave = s->start_wave;
+    opt_mouse = s->mouse; opt_keyboard = s->keyboard; opt_pad = s->pad;
+    opt_maximize = s->maximize; debug_spawn = s->spawn;
+    memcpy(cheat, s->cheat, sizeof s->cheat);
+    memcpy(enh, s->enh, sizeof s->enh);
+    if (assets_pack() != s->pack) assets_set_pack(s->pack);
+}
+
+static bool in_button(int mx, int my, int bx)
+{
+    return mx >= bx - 4 && mx < bx + BTN_W + 4 && my >= BTN_Y - 4 && my < BTN_Y + BTN_H + 4;
+}
 
 static void draw_options(int page, const Row *row, int nrow)
 {
@@ -836,17 +885,22 @@ static void draw_options(int page, const Row *row, int nrow)
     if (page == PG_CONTROLS) {
         char buf[128];
         snprintf(buf, sizeof buf, "Controller detected: %s", pad_present() ? pad_name() : "none");
-        draw_text(&A.geneva9, ROW_X, SCREEN_H - 40, buf, grey, 0);
+        draw_text(&A.geneva9, ROW_X, SCREEN_H - 68, buf, grey, 0);
     }
-    const char *fin = "Click a tab to change pages, or anywhere else to go back";
-    w = text_width(&A.geneva9, fin, 0);
-    draw_text(&A.geneva9, (SCREEN_W - w) / 2, SCREEN_H - 20, fin, white, 0);
+    /* face is the screen's own black, so the button is an outline with its label inside and
+     * inverts when pressed, the way the ones on the About and poem dialogs do. */
+    dialog_button(BTN_CANCEL_X, BTN_Y, BTN_W, "Cancel", black, white, false, false);
+    dialog_button(BTN_OK_X, BTN_Y, BTN_W, "OK", black, white, true, false);
+    const char *fin = "Click a tab to change pages. OK keeps the changes, Cancel puts them back.";
+    draw_text(&A.geneva9, ROW_X - 16, BTN_Y + 14, fin, grey, 0);
 }
 
 void do_options(void)
 {
     Row row[OPT_MAX_ROWS];
     int page = PG_GRAPHICS, nrow = page_rows(page, row, OPT_MAX_ROWS);
+    OptSnapshot entered;
+    opt_snapshot(&entered);
 
     sfx(SND_SHOT_GECKO);
     cursor_set(CURSOR_HAND);
@@ -856,9 +910,23 @@ void do_options(void)
     fade_to(A.game_clut, 15);
     flush_clicks();
 
+    uint8_t b_black = find_color(0, 0, 0), b_white = find_color(0xFFFF, 0xFFFF, 0xFFFF);
+    bool cancelled = false;
     for (;;) {
         int mx, my;
         if (take_click(&mx, &my)) {
+            /* OK and Cancel. Both flash on the way out; Cancel also puts every setting back to
+             * what it was when the screen opened, so the save main.c does writes the old file. */
+            if (in_button(mx, my, BTN_OK_X) || in_button(mx, my, BTN_CANCEL_X)) {
+                bool is_ok = in_button(mx, my, BTN_OK_X);
+                int bx = is_ok ? BTN_OK_X : BTN_CANCEL_X;
+                dialog_button(bx, BTN_Y, BTN_W, is_ok ? "OK" : "Cancel", b_black, b_white, is_ok, true);
+                set_entries();
+                present();
+                SDL_Delay(120);
+                cancelled = !is_ok;
+                break;
+            }
             if (my >= TAB_Y && my < TAB_Y + TAB_H) {       /* the page tabs */
                 int x = 24, hit = -1;
                 for (int i = 0; i < PG_COUNT; i++) {
@@ -874,7 +942,7 @@ void do_options(void)
                     set_entries();
                     continue;
                 }
-                break;
+                continue;                      /* the gap between two tabs: nothing happens */
             }
             int hit = -1;
             for (int i = 0; i < nrow; i++) {
@@ -882,7 +950,7 @@ void do_options(void)
                 int y = ROW_Y0 + i * ROW_DY;
                 if (my >= y - 2 && my < y + 15 && mx >= ROW_X && mx < ROW_X + 420) { hit = i; break; }
             }
-            if (hit < 0) break;
+            if (hit < 0) continue;             /* a click on nothing in particular (#26) */
             row_toggle(&row[hit]);
             sfx(row_state(&row[hit]) ? SND_MYHOOHA : SND_GROUCHO_OUCH);
             draw_options(page, row, nrow);
@@ -890,11 +958,23 @@ void do_options(void)
         }
         char k;
         while (take_key(&k)) { }
-        if (key_down(SDL_SCANCODE_ESCAPE)) break;
+        /* Escape is Cancel and Return is OK, as they are in a Mac dialog. */
+        bool esc = key_down(SDL_SCANCODE_ESCAPE);
+        bool ret = key_down(SDL_SCANCODE_RETURN) || key_down(SDL_SCANCODE_KP_ENTER);
+        if (esc || ret) {
+            int bx = ret ? BTN_OK_X : BTN_CANCEL_X;
+            dialog_button(bx, BTN_Y, BTN_W, ret ? "OK" : "Cancel", b_black, b_white, ret, true);
+            set_entries();
+            present();
+            SDL_Delay(120);
+            cancelled = esc && !ret;
+            break;
+        }
         pump();
         present();
         SDL_Delay(10);
     }
+    if (cancelled) opt_restore(&entered);
     sfx(SND_TRANSITION);
     fade_to_color(15, RGB_BLACK);
     set_monitor_clut(A.title_clut, false);

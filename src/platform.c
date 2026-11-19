@@ -18,8 +18,10 @@ static uint32_t argb[SCREEN_W * SCREEN_H];
 static bool button_event;
 static int  click_x, click_y;
 static bool have_click;
-static int  last_scale = 1, last_gx, last_gy;
+static float last_scale = 1.0f;     /* fractional under "Fill the window" */
+static int  last_gx, last_gy;
 static bool audio_ok;
+static float rel_x, rel_y;          /* mouse movement since the last mouse_delta() */
 
 /* ---- game controllers (#14) -----------------------------------------------------------------
  * SDL opens whatever is plugged in; the first one that answers steers the shooter. The analogue
@@ -112,10 +114,20 @@ bool plat_init(const char *title)
         if (!audio_dev) { audio_ok = false; SDL_Log("no audio device (%s)", SDL_GetError()); }
     }
     if (!audio_ok) SDL_Log("no audio (%s) - continuing silently", SDL_GetError());
+    /* The window opens at a 2x whole-number scale - 1280x960 - rather than at the Mac's own
+     * 640x480, which is a postage stamp on a modern display (#17). If the desktop cannot hold 2x
+     * it steps back to 1x; it is resizable either way, and "Open maximized" in Options overrides
+     * the size entirely. */
+    int win_w = SCREEN_W * 2, win_h = SCREEN_H * 2;
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) && usable.w > 0)
+        while ((win_w > usable.w || win_h > usable.h) && win_w > SCREEN_W)
+            { win_w -= SCREEN_W; win_h -= SCREEN_H; }
+
     /* SDL_WINDOW_MAXIMIZED at creation is the only form of the request a window manager cannot
      * quietly drop, which asking an already-open window to maximize plainly can be. */
     SDL_WindowFlags wf = SDL_WINDOW_RESIZABLE | (opt_maximize ? SDL_WINDOW_MAXIMIZED : 0);
-    if (!SDL_CreateWindowAndRenderer(title, SCREEN_W, SCREEN_H, wf, &g_win, &g_ren)) {
+    if (!SDL_CreateWindowAndRenderer(title, win_w, win_h, wf, &g_win, &g_ren)) {
         SDL_Log("window creation failed: %s", SDL_GetError());
         return false;
     }
@@ -142,6 +154,14 @@ void pump(void)
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT) plat_shutdown(0);
         if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) pad_rescan();
+        /* The movement is taken from the motion events rather than asked for with
+         * SDL_GetRelativeMouseState, which on some X servers answers with the pointer's absolute
+         * position instead of a delta (libsdl-org/SDL#14926). xrel/yrel are the same numbers SDL
+         * would accumulate for that call, and reading them here means one path on every platform. */
+        if (e.type == SDL_EVENT_MOUSE_MOTION) {
+            rel_x += e.motion.xrel;
+            rel_y += e.motion.yrel;
+        }
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             button_event = true; have_click = true;
             click_x = (int)((e.button.x - last_gx) / last_scale);
@@ -221,18 +241,18 @@ void flush_clicks(void)         /* FlushEvents(everyEvent, 0) */
 void mouse_relative(bool on)
 {
     SDL_SetWindowRelativeMouseMode(g_win, on);
-    if (!on) SDL_GetRelativeMouseState(NULL, NULL);    /* drop whatever built up */
+    pump();
+    rel_x = rel_y = 0;              /* drop whatever built up on the way in or out */
 }
 
 /* The accumulated movement since the last call, in 640x480 screen pixels. */
 void mouse_delta(float *dx, float *dy)
 {
     pump();
-    float rx = 0, ry = 0;
-    SDL_GetRelativeMouseState(&rx, &ry);
-    float s = last_scale > 0 ? (float)last_scale : 1.0f;
-    *dx = rx / s;
-    *dy = ry / s;
+    float s = last_scale > 0 ? last_scale : 1.0f;
+    *dx = rel_x / s;
+    *dy = rel_y / s;
+    rel_x = rel_y = 0;
 }
 
 bool take_click_only(void)      /* Button(): the mouse, not the keyboard */
@@ -320,7 +340,12 @@ void present(void)
         if (gw > ow) { gw = ow; gh = ow * SCREEN_H / SCREEN_W; }
     }
     int gx = (ow - gw) / 2, gy = (oh - gh) / 2;
-    last_scale = gw / SCREEN_W > 0 ? gw / SCREEN_W : 1;
+    /* The scale the picture is actually drawn at, which "Fill the window" makes fractional. The
+     * frame and the desktop pattern around it are drawn at this too, not at the whole-number `s`:
+     * using `s` there left the lavender rings the wrong thickness and sitting away from the edge
+     * of the picture, which is what the odd left border was (#21). */
+    float fs = (float)gw / (float)SCREEN_W;
+    last_scale = fs > 0 ? fs : 1.0f;
     last_gx = gx; last_gy = gy;
 
     /* Asked of the window rather than remembered from an event: a focus change that arrives while
@@ -348,13 +373,13 @@ void present(void)
             for (int i = 0; i < margin_pat->w * margin_pat->h; i++) margin_argb[i] = lut[margin_pat->px[i]];
             SDL_UpdateTexture(margin_tex, NULL, margin_argb, margin_pat->w * 4);
             SDL_FRect all = { 0, 0, (float)ow, (float)oh };
-            SDL_RenderTextureTiled(g_ren, margin_tex, NULL, (float)s, &all);
+            SDL_RenderTextureTiled(g_ren, margin_tex, NULL, fs, &all);
         }
         if (border_active) {
             for (int k = 1; k <= 7; k++) {
                 set_draw_color(&shown[border_idx[k - 1]]);
-                float x0 = (float)(gx - k * s), y0 = (float)(gy - k * s), t = (float)s;
-                float w = (float)((SCREEN_W + 2 * k) * s), h = (float)((SCREEN_H + 2 * k) * s);
+                float x0 = gx - k * fs, y0 = gy - k * fs, t = fs;
+                float w = (SCREEN_W + 2 * k) * fs, h = (SCREEN_H + 2 * k) * fs;
                 SDL_FRect top = { x0, y0, w, t }, bot = { x0, y0 + h - t, w, t };
                 SDL_FRect lef = { x0, y0, t, h }, rig = { x0 + w - t, y0, t, h };
                 SDL_RenderFillRect(g_ren, &top); SDL_RenderFillRect(g_ren, &bot);
@@ -638,6 +663,69 @@ void draw_sprite_clipped(const Sprite *s, int frame, int x, int y, int cx, int c
             if (dx < cx || dx >= cx + cw || dx < 0 || dx >= SCREEN_W) continue;
             uint8_t v = src[row * s->w + col];
             if (v != s->trans) fb[dy * SCREEN_W + dx] = v;
+        }
+    }
+}
+
+/* The shield, masked to a circle with a soft edge (#24). The artwork is a 16x16 square of sparkle
+ * and it reads as a square; a disc of radius eight centred on the sprite reads as the shell it is
+ * meant to be.
+ *
+ * There is no alpha channel to do this with - the frame buffer is 8-bit indices into a 256-entry
+ * clut, exactly as the Mac's was - so the edge is anti-aliased the only way an indexed display can
+ * be: work out how much of each rim pixel the circle covers, mix the sprite's colour with the
+ * colour already on the screen in that proportion, and write the nearest index the clut has to the
+ * result. The coverage comes from sampling each pixel on a 4x4 grid, which gives seventeen levels -
+ * enough that the rim reads as a curve rather than a staircase. It is computed once; the colour
+ * mixing has to happen every frame, because what is behind the shooter changes and so does the
+ * clut, but it is only the sixty-odd pixels on the rim. */
+void draw_sprite_disc(const Sprite *s, int frame, int x, int y, int cx, int cy, int cw, int ch)
+{
+    if (s->count <= 0) return;
+    if (frame < 1) frame = 1;
+    if (frame > s->count) frame = ((frame - 1) % s->count) + 1;
+
+    static uint8_t cov[64 * 64];            /* coverage 0..16, for sprites up to 64x64 */
+    static int cov_w, cov_h;
+    if (s->w <= 64 && s->h <= 64 && (cov_w != s->w || cov_h != s->h)) {
+        cov_w = s->w; cov_h = s->h;
+        float r = (float)(s->w < s->h ? s->w : s->h) / 2.0f;
+        float ox = (float)s->w / 2.0f, oy = (float)s->h / 2.0f;
+        for (int row = 0; row < s->h; row++)
+            for (int col = 0; col < s->w; col++) {
+                int n = 0;
+                for (int sy = 0; sy < 4; sy++)
+                    for (int sx = 0; sx < 4; sx++) {
+                        float px = (float)col + ((float)sx + 0.5f) / 4.0f - ox;
+                        float py = (float)row + ((float)sy + 0.5f) / 4.0f - oy;
+                        if (px * px + py * py <= r * r) n++;
+                    }
+                cov[row * s->w + col] = (uint8_t)n;
+            }
+    }
+    if (cov_w != s->w || cov_h != s->h) {   /* too big to mask: draw it as it is */
+        draw_sprite_clipped(s, frame, x, y, cx, cy, cw, ch);
+        return;
+    }
+
+    const uint8_t *src = s->img.px + (size_t)(frame - 1) * s->h * s->w;
+    for (int row = 0; row < s->h; row++) {
+        int dy = y + row;
+        if (dy < cy || dy >= cy + ch || dy < 0 || dy >= SCREEN_H) continue;
+        for (int col = 0; col < s->w; col++) {
+            int dx = x + col;
+            if (dx < cx || dx >= cx + cw || dx < 0 || dx >= SCREEN_W) continue;
+            uint8_t v = src[row * s->w + col];
+            if (v == s->trans) continue;
+            int n = cov[row * s->w + col];
+            if (n == 0) continue;
+            if (n == 16) { fb[dy * SCREEN_W + dx] = v; continue; }
+            const Rgb *a = &s->img.pal[v];               /* the sprite's own colour */
+            const Rgb *b = &table[fb[dy * SCREEN_W + dx]];   /* and what it is covering */
+            int r = (a->r * n + b->r * (16 - n)) / 16;
+            int g = (a->g * n + b->g * (16 - n)) / 16;
+            int bl = (a->b * n + b->b * (16 - n)) / 16;
+            fb[dy * SCREEN_W + dx] = find_color(r, g, bl);
         }
     }
 }

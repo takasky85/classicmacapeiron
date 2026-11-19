@@ -16,11 +16,11 @@ const char *const PACK_LABEL[PACK_COUNT] = {
 static char asset_root[768];
 
 /* Settings the Options screen owns. The defaults are how the game played before it existed. */
-bool enh[ENH_COUNT] = { true, true, true, false };
+bool enh[ENH_COUNT] = { true, true, true, false, true };
 int  opt_scale = SCALE_INTEGER;
 bool opt_mouse = true, opt_keyboard = true, opt_pad = true;
 int  opt_pad_deadzone = 25;
-bool opt_maximize = true;
+bool opt_maximize = false;         /* the window opens at a 2x whole-number scale instead (#17) */
 int  opt_start_wave = 1;
 static int  cur_pack;
 
