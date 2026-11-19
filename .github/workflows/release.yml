@@ -16,7 +16,9 @@ name: release
 
 on:
   push:
-    tags: ['v*']
+    # This repository's existing tag is `alpha1`, so a v*-only trigger would never have fired for
+    # it. These three cover what is already here and the usual version form.
+    tags: ['v*', 'alpha*', 'beta*']
   workflow_dispatch:
     inputs:
       tag:
@@ -152,7 +154,7 @@ jobs:
     name: publish the release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
     steps:
       - uses: actions/download-artifact@v4
         with:
