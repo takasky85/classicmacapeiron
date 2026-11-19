@@ -11,14 +11,17 @@ name: release
 # tools/extract_assets.py. The game looks for ./assets beside itself and takes a path as its first
 # argument, and without it stops at startup saying so.
 #
-# Trigger: push a tag (`git tag v0.1.0 && git push origin v0.1.0`), or run it by hand from the
-# Actions tab, which builds and uploads the artifacts without publishing a release.
+# Trigger: any tag, however it is named - pushed from a terminal, or created by making a release in
+# the browser. Or run it by hand from the Actions tab: with the tag box empty it builds and uploads
+# the three archives as run artifacts and touches no release; with a tag name it also attaches them
+# to that tag's release, creating it if it does not exist.
 
 on:
   push:
-    # This repository's existing tag is `alpha1`, so a v*-only trigger would never have fired for
-    # it. These three cover what is already here and the usual version form.
-    tags: ['v*', 'alpha*', 'beta*']
+    # ANY tag. An allowlist of patterns was a mistake: tags named claude1 and claude2 matched
+    # none of v*, alpha* or beta*, so creating them built nothing and attached nothing, silently.
+    # If you make a tag, you want the binaries.
+    tags: ['**']
   workflow_dispatch:
     inputs:
       tag:
@@ -170,7 +173,9 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          draft: true
+          # draft is deliberately not set. Forcing draft: true would have un-published a release
+          # made by hand in the browser, which is how releases get made here - the workflow's job
+          # is to attach binaries to it, not to change its state.
           generate_release_notes: true
           files: dist/*
           body: |
