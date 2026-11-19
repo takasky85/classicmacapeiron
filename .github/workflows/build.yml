@@ -64,15 +64,21 @@ jobs:
       # No SDL3 is installed here on purpose: CMakeLists should fetch it. And there is no assets/,
       # which the post-build copy step used to fail the whole build over. Configuring is enough to
       # check both - the full compile and link is what the release workflow does.
-      # SDL3 will not configure without X11 or Wayland development headers, which the runner
-      # image does not carry. This is the subset SDL needs to get through its own configure.
+      # SDL3 will not configure without X11 or Wayland development headers, which the runner image
+      # does not carry. This is the same list the release workflow installs, and it has to stay the
+      # same list: from the 3.4 series SDL treats a dependency it looked for and did not find as an
+      # error rather than a feature to leave out, so a package missing here fails the configure
+      # outright. It was a short subset of the release list, and XTEST missing from it was enough.
       - name: install SDL3's build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libasound2-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
-            libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libgl1-mesa-dev \
-            libegl1-mesa-dev libdbus-1-dev libudev-dev
+            libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev \
+            libibus-1.0-dev libudev-dev libwayland-dev wayland-protocols \
+            libdecor-0-dev libxtst-dev libpipewire-0.3-dev libsamplerate0-dev
       - name: cache the fetched SDL3
         uses: actions/cache@v4
         with:

@@ -63,7 +63,9 @@ jobs:
       - uses: actions/checkout@v4
 
       # SDL3 builds its video and audio backends against the system's development headers. Without
-      # these, SDL still configures but comes out with no working video driver on Linux.
+      # these, SDL still configures but comes out with no working video driver on Linux - and from
+      # the 3.4 series a dependency it looks for and cannot find fails the configure outright, so
+      # this list and the one in build.yml have to stay the same list.
       - name: install SDL3's Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -74,7 +76,7 @@ jobs:
             libxi-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
             libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev \
             libibus-1.0-dev libudev-dev libwayland-dev wayland-protocols \
-            libdecor-0-dev libxtst-dev
+            libdecor-0-dev libxtst-dev libpipewire-0.3-dev libsamplerate0-dev
 
       # SDL3's source is fetched by CMake, so caching it keeps a release build to a couple of
       # minutes instead of re-cloning and rebuilding SDL every time.
