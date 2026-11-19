@@ -1482,7 +1482,7 @@ static void house_keeping(void)
     /* "you can only have one shot on the screen at a time" - the instruction pages and the
      * shipped Hints file both say so; the 5/9/15 band is the flea threshold, not the shot limit. */
     shot_limit = 1;
-    shot_delay = 2;
+    shot_delay = 1;             /* [NewGame]: DAT_1001daac = 0, and the gate is a strict > */
 
     if (flash_until && ticks > flash_until) { flash_until = 0; set_monitor_clut(A.game_clut, true); }
     if (psyc_until) {
@@ -1518,8 +1518,14 @@ static void house_keeping(void)
     if (cheat[CH_SQUISH])  powerup[PW_MACHINEGUN] = POWERUP_FRAMES;
     if (cheat[CH_SNAPPLE]) powerup[PW_LOCK] = POWERUP_FRAMES;
     if (cheat[CH_DJARUM])  powerup[PW_FREEMOVE] = POWERUP_FRAMES;
-    shot_limit = powerup[PW_MACHINEGUN] ? 4 : 1;   /* the machine gun lifts the one-shot rule */
-    shot_delay = powerup[PW_MACHINEGUN] ? 1 : 2;
+    /* [GameHouseKeeping]'s machine-gun roll sets DAT_1001daa6 (how many shots may be in flight) to
+     * 10 and DAT_1001daac (the gap between them) to 9, against the 1 and 0 that [NewGame] starts
+     * with. [ShroomShotCheck] gates on `tick - DAT_1001daa8 > DAT_1001daac`, and that tick counter
+     * advances once per Mac tick at 60.15Hz, so the gap is strictly more than nine ticks - about
+     * six shots a second. The delays below are one greater than the binary's because the test here
+     * is `<` rather than `>`. */
+    shot_limit = powerup[PW_MACHINEGUN] ? 10 : 1;
+    shot_delay = powerup[PW_MACHINEGUN] ? 10 : 1;
 
     if (psyc_at && ticks > psyc_at) { psyc_at = 0; create_psychadelic(); }
     if (mult_at && ticks > mult_at) { mult_at = 0; create_multiplier(); }
@@ -2221,7 +2227,7 @@ void run_attract(void)
     cheated = false;
     level_bonus = 2000;
     player_speed = 0x12;
-    shot_limit = 1; shot_delay = 2;
+    shot_limit = 1; shot_delay = 1;
     psyc_until = 0; psyc_phase = 2; psyc_next = 0;
     flash_until = 0;
     memset(powerup, 0, sizeof powerup);
@@ -2268,7 +2274,7 @@ void new_game(void)                          /* [NewGame] */
     if (cheat[CH_PERNTS]) score = 50000;
     level_bonus = 2000 + (cheat[CH_USMC] ? 5000 : 0);   /* USMC: "adds 5,000 points to the bonus" */
     player_speed = 0x12;
-    shot_limit = 1; shot_delay = 2;
+    shot_limit = 1; shot_delay = 1;
     psyc_until = 0; psyc_phase = 2; psyc_next = 0;
     flash_until = 0;
     memset(powerup, 0, sizeof powerup);
