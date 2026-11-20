@@ -1,0 +1,12 @@
+# RetroArch reads this beside the core to describe it in the menus.
+display_name = "Apeiron (SDL3 port)"
+authors = "Ambrosia Software (original) | SDL3 port"
+supported_extensions = "apeiron|zip"
+corename = "Apeiron"
+categories = "Game"
+license = "see the repository"
+permissions = ""
+display_version = "1.0.3"
+supports_no_game = "true"
+database = ""
+notes = "The artwork, fonts and sounds are not included - they are Ambrosia Software's. Make an 'assets' folder from your own copy of Apeiron with tools/extract_assets.py and put it in RetroArch's system directory as 'apeiron/assets', then start the core with no content."

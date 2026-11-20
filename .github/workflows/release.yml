@@ -192,9 +192,89 @@ jobs:
             apeiron-*.tar.gz
           if-no-files-found: error
 
+  # ---------------------------------------------------------------------------- libretro cores
+  # The same game sources, built against a libretro backend instead of SDL. RetroArch supplies the
+  # window, the on-screen controls and the content browser, which is what makes a phone and a
+  # Google TV box practical targets at all.
+  cores:
+    name: ${{ matrix.name }}
+    needs: stamp
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: libretro-windows-x86_64
+            platform: win
+            artifact: apeiron_libretro.dll
+          - name: libretro-android-armv7
+            platform: android-armv7
+            artifact: apeiron_libretro_android.so
+            abi: armeabi-v7a
+          - name: libretro-android-arm64
+            platform: android-arm64
+            artifact: apeiron_libretro_android.so
+            abi: arm64-v8a
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install the MinGW cross compiler
+        if: matrix.platform == 'win'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+
+      - name: build the core
+        run: |
+          set -e
+          export NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          make -C libretro platform=${{ matrix.platform }} \
+               BUILD_STAMP=${{ needs.stamp.outputs.stamp }} \
+               BUILD_NAME=${{ needs.stamp.outputs.name }}
+
+      - name: collect the artifact
+        run: |
+          set -e
+          core=$(find build-libretro -name '${{ matrix.artifact }}' -type f | head -1)
+          test -n "$core" || { echo "no ${{ matrix.artifact }}"; find build-libretro | head -40; exit 1; }
+          file "$core"
+          stage="apeiron-${{ matrix.name }}"
+          mkdir -p "$stage"
+          cp "$core" "$stage/"
+          cp libretro/apeiron_libretro.info "$stage/"
+          cp README.md "$stage/"
+          cat > "$stage/HOW-TO-RUN.txt" <<'TXT'
+          Apeiron - a libretro core
+          =========================
+
+          Put the core where RetroArch keeps its cores, and the .info file beside it.
+
+          The artwork is NOT in here. It is Ambrosia Software's, and this port reads it out of
+          the game's own resource forks rather than shipping copies. Make it from your own copy:
+
+              python3 tools/extract_assets.py <the installed Apeiron folder> assets
+
+          Then put that folder in RetroArch's *system* directory as:
+
+              <system>/apeiron/assets
+
+          and start the core with no content. If you would rather keep the artwork somewhere
+          else, use "Load Content" and pick any file inside your assets folder instead.
+
+          Controls: the left stick or the d-pad steers, B or A fires, Start pauses, Select goes
+          back to the title. In the menus the stick moves a pointer and A clicks; a touch screen
+          works there too.
+          TXT
+          tar czf "$stage.tar.gz" "$stage"
+          ls -la apeiron-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apeiron-${{ matrix.name }}
+          path: apeiron-*.tar.gz
+          if-no-files-found: error
+
   publish:
     name: publish the release
-    needs: build
+    needs: [build, cores]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
     steps:
@@ -224,6 +304,9 @@ jobs:
             | `apeiron-windows-x86_64.zip` | Windows 10/11, 64-bit |
             | `apeiron-linux-x86_64.tar.gz` | Linux, 64-bit |
             | `apeiron-macos-universal.tar.gz` | macOS, Apple silicon and Intel - a .app bundle |
+            | `apeiron-libretro-windows-x86_64.tar.gz` | a RetroArch core for Windows |
+            | `apeiron-libretro-android-armv7.tar.gz` | a RetroArch core for 32-bit ARM Android |
+            | `apeiron-libretro-android-arm64.tar.gz` | a RetroArch core for 64-bit ARM Android |
 
             ## What is NOT in them
 
