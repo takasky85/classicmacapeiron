@@ -16,7 +16,7 @@ const char *const PACK_LABEL[PACK_COUNT] = {
 static char asset_root[768];
 
 /* Settings the Options screen owns. The defaults are how the game played before it existed. */
-bool enh[ENH_COUNT] = { true, true, true, false, true };
+bool enh[ENH_COUNT] = { true, true, true, false, true, false };
 int  opt_scale = SCALE_INTEGER;
 bool opt_mouse = true, opt_keyboard = true, opt_pad = true;
 int  opt_pad_deadzone = 25;

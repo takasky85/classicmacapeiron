@@ -190,7 +190,7 @@ extern bool cheat[CH_COUNT];
 
 /* enhancements beyond the original, each switchable on the Options screen */
 enum { ENH_WEAPON_FLY = 0, ENH_WEAPON_ANIM, ENH_ATTRACT, ENH_NO_PSYC, ENH_TALLY_PICKUP,
-       ENH_COUNT };
+       ENH_MORE_GORDON, ENH_COUNT };
 /* Stamped into the title screen so a build can be told apart from the one before it. */
 #define APEIRON_BUILD (__DATE__ " " __TIME__)
 extern bool enh[ENH_COUNT];
