@@ -86,3 +86,32 @@ jobs:
           key: sdl3-configure-${{ hashFiles('CMakeLists.txt') }}
       - name: cmake configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+  # The libretro core is the same game sources behind a different backend, so it can rot in
+  # exactly the way the headless harness can. This builds it and runs it in the little test
+  # frontend under libretro/test, which loads the core the way RetroArch does. There is no
+  # artwork here, so what is being checked is that the core loads, that every entry point the
+  # frontend needs is exported, that retro_run returns a frame rather than hanging, and that it
+  # says what it needs and stops cleanly rather than crashing.
+  libretro:
+    name: build and run the libretro core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the core and the test frontend
+        run: make -C libretro test
+      - name: run it with no artwork and expect a clean refusal
+        run: |
+          set +e
+          ./build-libretro/native/frontend \
+              ./build-libretro/native/apeiron_libretro.so /tmp/no-such-system 120
+          status=$?
+          set -e
+          echo "exit status $status"
+          test "$status" -lt 128
+      - name: cross-compile for Android, both ABIs
+        run: |
+          export NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          make -C libretro platform=android-armv7
+          make -C libretro platform=android-arm64
+          find build-libretro -name '*.so' -exec file {} \;
