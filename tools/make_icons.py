@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""Draw the application icon and write it out in the shapes Windows and macOS want.
+"""Make the application icon and write it out in the shapes Windows and macOS want.
 
-The artwork here is drawn from scratch by this script. None of it comes out of the game's own
-resource fork - that artwork is Ambrosia Software's and is deliberately not in this repository -
-so what this produces is a generic segmented-creature motif that happens to suit the game, and
-nothing that belongs to anybody else.
+Two sources, and which one you get depends on the arguments:
 
-    python3 tools/make_icons.py            # writes into packaging/
+    python3 tools/make_icons.py --from-game <the installed Apeiron folder>
 
-Produces packaging/apeiron.png (1024), apeiron.ico (Windows) and apeiron.icns (macOS). The .rc
-file beside them is what points the Windows linker at the .ico; it is checked in and not
-generated. Re-run this only to change the drawing; the results are committed so that a build
-needs neither Pillow nor this script.
+takes the real thing - `icl8` 128 and its `ICN#` mask out of the application's resource fork,
+through `clut` 130, which is the 32x32 icon the Finder puts on Apeiron itself. That is Ambrosia
+Software's artwork. The committed icons were made this way, deliberately, because the point is
+for the port to look like the game it is a port of. It is the one piece of their artwork in this
+repository; everything else still has to come from your own copy.
+
+    python3 tools/make_icons.py
+
+with no arguments draws a generic segmented-creature motif from scratch instead, which belongs
+to nobody and is here so the build has something to fall back on.
+
+Either way it produces packaging/apeiron.png, apeiron.ico (Windows) and apeiron.icns (macOS).
+The .rc file beside them points the Windows linker at the .ico; it is checked in, not generated.
+The results are committed, so a build needs neither Pillow nor this script.
 """
 import math
 import os
@@ -30,6 +37,55 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 def disc(d, cx, cy, r, fill, rim=None, rim_w=0):
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=fill,
               outline=rim, width=rim_w)
+
+
+def from_game(folder):
+    """The application's own Finder icon, out of its resource fork.
+
+    icl8 is 32x32 bytes of indices into clut 130 - the Mac's system palette, which the resource
+    fork carries a copy of - and the second half of ICN# is the 1-bit mask that says which of
+    those pixels are actually the icon. ics8/ics# are the same thing at 16x16, and worth taking
+    separately rather than shrinking the big one, because somebody drew it by hand.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import rsrc
+    app = None
+    for cand in (os.path.join(folder, ".rsrc", "Apeiron"), os.path.join(folder, "Apeiron"), folder):
+        if os.path.isfile(cand):
+            try:
+                res = {(t, i): d for t, i, n, a, d in rsrc.parse(cand)}
+            except Exception:
+                continue
+            if ("icl8", 128) in res:
+                app = res
+                break
+    if not app:
+        sys.exit("no icl8 128 in %s - point this at the folder holding the Apeiron application"
+                 % folder)
+
+    clut = app[("clut", 130)]
+    count = struct.unpack(">H", clut[6:8])[0] + 1
+    pal = [(0, 0, 0)] * 256
+    for k in range(count):
+        o = 8 + k * 8
+        v, r, g, b = struct.unpack(">HHHH", clut[o:o + 8])
+        if v < 256:
+            pal[v] = (r >> 8, g >> 8, b >> 8)
+
+    def one(px_tag, mask_tag, size):
+        px, mk = app[(px_tag, 128)], app[(mask_tag, 128)]
+        half = size * size // 8                      # the icon comes first, then the mask
+        im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        p = im.load()
+        for y in range(size):
+            for x in range(size):
+                bit = (mk[half + y * (size // 8) + x // 8] >> (7 - (x % 8))) & 1
+                if bit:
+                    r, g, b = pal[px[y * size + x]]
+                    p[x, y] = (r, g, b, 255)
+        return im
+
+    return one("icl8", "ICN#", 32), one("ics8", "ics#", 16)
 
 
 def draw_icon():
@@ -80,6 +136,54 @@ def draw_icon():
     return im
 
 
+def write_ico(at, path, sizes=(16, 32, 64, 128, 256)):
+    """An .ico carrying a PNG per size.
+
+    Pillow's own ICO writer takes one image and resizes it to each size with a smooth filter,
+    which is the one thing this icon must not have done to it - every size here is a whole
+    multiple of a 32x32 original and has to stay square-edged. Windows has read PNG-payload
+    icons since Vista, so writing the container by hand is a few lines and keeps the pixels.
+    """
+    import io
+    entries, blobs, offset = [], [], 6 + 16 * len(sizes)
+    for size in sizes:
+        buf = io.BytesIO()
+        at(size).save(buf, format="PNG")
+        png = buf.getvalue()
+        entries.append(struct.pack("<BBBBHHII",
+                                   0 if size >= 256 else size,   # 0 means 256
+                                   0 if size >= 256 else size,
+                                   0, 0, 1, 32, len(png), offset))
+        blobs.append(png)
+        offset += len(png)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<HHH", 0, 1, len(sizes)))
+        for e in entries:
+            f.write(e)
+        for b in blobs:
+            f.write(b)
+
+
+def write_icns_sizes(at, path):
+    """A PNG-carrying .icns, which is what every macOS since 10.7 reads.
+
+    The container is a four-byte magic, a big-endian total length, then one chunk per size: a
+    four-character type, the chunk's length including its own eight-byte header, and the PNG.
+    """
+    import io
+    kinds = [(b"icp4", 16), (b"icp5", 32), (b"icp6", 64), (b"ic07", 128),
+             (b"ic08", 256), (b"ic09", 512), (b"ic10", 1024), (b"ic11", 32),
+             (b"ic12", 64), (b"ic13", 256), (b"ic14", 512)]
+    chunks = b""
+    for tag, size in kinds:
+        buf = io.BytesIO()
+        at(size).save(buf, format="PNG")
+        png = buf.getvalue()
+        chunks += tag + struct.pack(">I", len(png) + 8) + png
+    with open(path, "wb") as f:
+        f.write(b"icns" + struct.pack(">I", len(chunks) + 8) + chunks)
+
+
 def write_icns(im, path):
     """A PNG-carrying .icns, which is what every macOS since 10.7 reads.
 
@@ -102,12 +206,32 @@ def write_icns(im, path):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    im = draw_icon()
+    game = None
+    if len(sys.argv) > 2 and sys.argv[1] == "--from-game":
+        game = sys.argv[2]
+
+    if game:
+        # The real icon is 32x32 and that is all there ever was, so every larger size is a whole
+        # multiple of it with no smoothing - a 32x32 icon blown up smoothly just looks like a
+        # mistake, where blown up square looks like what it is.
+        big, small = from_game(game)
+        im = big.resize((1024, 1024), Image.NEAREST)
+        sizes16 = {16: small}
+        print("icon: Apeiron's own, from its resource fork")
+    else:
+        im = draw_icon()
+        sizes16 = {}
+        print("icon: the drawn fallback")
+
+    def at(size):
+        if size in sizes16:
+            return sizes16[size]
+        src = big if game else im
+        return src.resize((size, size), Image.NEAREST if game else Image.LANCZOS)
+
     im.save(os.path.join(OUT, "apeiron.png"))
-    im.resize((256, 256), Image.LANCZOS).save(
-        os.path.join(OUT, "apeiron.ico"),
-        sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    write_icns(im, os.path.join(OUT, "apeiron.icns"))
+    write_ico(at, os.path.join(OUT, "apeiron.ico"))
+    write_icns_sizes(at, os.path.join(OUT, "apeiron.icns"))
     for n in ("apeiron.png", "apeiron.ico", "apeiron.icns"):
         p = os.path.join(OUT, n)
         print("%-16s %8d bytes" % (n, os.path.getsize(p)))
