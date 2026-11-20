@@ -1,0 +1,36 @@
+/* The Windows executable's icon and version block.
+ *
+ * CMake lists this file as a source on WIN32 and both MSVC's rc and MinGW's windres compile it;
+ * the icon path is resolved against this file's own directory. The drawing in apeiron.ico is
+ * tools/make_icons.py's own work, not anything out of the game's resource fork.
+ *
+ * The lowest-numbered icon resource is the one Explorer puts on the file, so this is 1.
+ */
+#include <windows.h>
+
+1 ICON "apeiron.ico"
+
+1 VERSIONINFO
+FILEVERSION     1,0,3,0
+PRODUCTVERSION  1,0,3,0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Apeiron - SDL3 port"
+            VALUE "FileVersion",     "1.0.3"
+            VALUE "InternalName",    "apeiron"
+            VALUE "OriginalFilename","apeiron.exe"
+            VALUE "ProductName",     "Apeiron (SDL3 port)"
+            VALUE "ProductVersion",  "1.0.3"
+            VALUE "Comments",        "A port of Ambrosia Software's Apeiron. Needs the artwork from your own copy of the game; see README.md."
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

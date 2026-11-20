@@ -134,3 +134,15 @@ void SDL_PumpEvents(void);
 #define SDL_WINDOW_INPUT_FOCUS 0x200u
 #define SDL_WINDOW_MOUSE_FOCUS 0x400u
 SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *);
+
+/* folder picker, message box, prefs and DPI - enough of them for the headless build to link */
+#define SDLCALL
+typedef void (SDLCALL *SDL_DialogFileCallback)(void *, const char * const *, int);
+void SDL_ShowOpenFolderDialog(SDL_DialogFileCallback, void *, SDL_Window *, const char *, bool);
+bool SDL_ShowSimpleMessageBox(Uint32, const char *, const char *, SDL_Window *);
+#define SDL_MESSAGEBOX_INFORMATION 0x00000040u
+char *SDL_GetPrefPath(const char *, const char *);
+const char *SDL_GetBasePath(void);
+const char *SDL_GetCurrentVideoDriver(void);
+float SDL_GetWindowPixelDensity(SDL_Window *);
+#define SDL_WINDOW_HIGH_PIXEL_DENSITY 0x0000000000002000ULL

@@ -886,8 +886,13 @@ static void start_level(void)
     /* Those dice work out at about two crossings in the first fourteen waves, which is faithful and
      * not much fun. With the Enhancements switch on he is due every wave, from the first, and comes
      * back a few seconds after each crossing - the schedule Larry is on. */
-    if (enh[ENH_MORE_VISITS] && !gecko_at) gecko_at = rnd(10) * 60 + 120;
-    if (enh[ENH_MORE_VISITS] && !fodder_at) fodder_at = rnd(15) * 60 + 120;
+    /* Both of them get a visit every wave, which the original does not do: it gives Gordon one
+     * crossing in one wave of four and never below the fourth mushroom colour of a group, and the
+     * saucer one flyby in one wave of three, and neither is ever booked again. Faithful, and the
+     * pair of them turn up about six times in fourteen waves between them, which is not a game.
+     * These two lines and the two re-arms below are the deliberate exception. */
+    if (!gecko_at) gecko_at = rnd(10) * 60 + 120;
+    if (!fodder_at) fodder_at = rnd(15) * 60 + 120;
 }
 
 /* ---- drawing ---------------------------------------------------------------------------------- */
@@ -1403,7 +1408,7 @@ static void update_entities(void)
              * Gordon crosses at most once in a wave unless the Enhancements switch is on. */
             if (FIX_WHOLE(e->x) <= 0) {
                 e->alive = false;
-                if (enh[ENH_MORE_VISITS]) gecko_at = ticks + rnd(300) + 150;
+                gecko_at = ticks + rnd(300) + 150;      /* and again later in the wave */
             }
             break;
         }
@@ -1444,11 +1449,9 @@ static void update_entities(void)
             if (ix + 20 > FIELD_W || ix < 0) {
                 sfx(SND_MISSED_IT);
                 e->alive = false;
-                /* [FodderMoveProc] hides her and stops there. DAT_1001dac0 is written in exactly
-                 * one place, [StartLevel], and read in exactly one, so the saucer gets one visit
-                 * in a wave and only in one wave out of three. This port was quietly booking her
-                 * a return trip; now only the Enhancements switch does. */
-                if (enh[ENH_MORE_VISITS]) fodder_at = ticks + rnd(600) + 300;
+                /* [FodderMoveProc] hides her and stops there - the original gives her no return
+                 * trip. This one does; see the note in start_level. */
+                fodder_at = ticks + rnd(600) + 300;
                 break;
             }
             if (iy < 0) { e->y = 0; e->vy = 0; }
@@ -2425,9 +2428,9 @@ void run_attract(void)
 
 void new_game(void)                          /* [NewGame] */
 {
-    gticks = 0;
-    scorp_at = 0;                            /* DAT_1001dacc: Larry is due from the first frame */
-    scorp_warned = false;
+    /* gticks and scorp_at are deliberately not reset. DAT_1001da90 is the Mac's tick count and
+     * DAT_1001dacc is never initialised by [NewGame] or [StartLevel], so Larry is due immediately
+     * in the first game after launch and inherits his appointment in every game after that. */
     quit_to_title = false;
     score = 0; next_extra = 20000;
     lives = 3; mult = 1;               /* [NewGame]: DAT_1001da70 = 3, plus the one on the field */

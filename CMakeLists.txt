@@ -36,8 +36,32 @@ else()
   FetchContent_MakeAvailable(SDL3)
 endif()
 
+# --------------------------------------------------------------------------------- which build
+# The title screen carries a stamp so a screenshot can be matched to the archive it came from.
+# APEIRON_BUILD_NAME is the GitHub release's tag and APEIRON_BUILD_STAMP is yymmddhhmm; the release
+# workflow works the stamp out in Pacific time, which is the clock the downloads are named by. A
+# build from a working copy gets this machine's local time and no name.
+if(NOT DEFINED APEIRON_BUILD_STAMP OR APEIRON_BUILD_STAMP STREQUAL "")
+  string(TIMESTAMP APEIRON_BUILD_STAMP "%y%m%d%H%M")
+endif()
+if(NOT DEFINED APEIRON_BUILD_NAME)
+  set(APEIRON_BUILD_NAME "")
+endif()
+message(STATUS "apeiron: build ${APEIRON_BUILD_NAME} ${APEIRON_BUILD_STAMP}")
+
 # ------------------------------------------------------------------------------------- the game
-add_executable(apeiron src/main.c src/platform.c src/assets.c src/intro.c src/game.c)
+set(APEIRON_SOURCES src/main.c src/platform.c src/assets.c src/intro.c src/game.c)
+
+# The Windows executable's icon. MSVC and MinGW both compile a .rc listed as a source; it is an
+# original drawing (tools/make_icons.py), not anything out of the game's own resource fork.
+if(WIN32)
+  list(APPEND APEIRON_SOURCES packaging/apeiron.rc)
+endif()
+
+add_executable(apeiron ${APEIRON_SOURCES})
+target_compile_definitions(apeiron PRIVATE
+  APEIRON_BUILD_STAMP="${APEIRON_BUILD_STAMP}"
+  APEIRON_BUILD_NAME="${APEIRON_BUILD_NAME}")
 
 if(TARGET SDL3::SDL3-static AND APEIRON_STATIC_SDL)
   target_link_libraries(apeiron PRIVATE SDL3::SDL3-static)
@@ -50,6 +74,25 @@ if(WIN32 AND APEIRON_STATIC_SDL)
   set_target_properties(apeiron PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
+# ------------------------------------------------------------------------------ the macOS bundle
+# A .app rather than a bare executable: it carries the icon, it can be double-clicked, and it is
+# what a Mac expects to be handed. The artwork is still not in it - the game looks beside the
+# bundle and inside Contents/Resources for an assets folder, and asks for one if it finds neither.
+if(APPLE)
+  set_target_properties(apeiron PROPERTIES
+    MACOSX_BUNDLE TRUE
+    OUTPUT_NAME "Apeiron"
+    MACOSX_BUNDLE_BUNDLE_NAME "Apeiron"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.takasky85.apeiron"
+    MACOSX_BUNDLE_ICON_FILE "apeiron.icns"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${APEIRON_BUILD_STAMP}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.3"
+    MACOSX_BUNDLE_COPYRIGHT "A port of Ambrosia Software's Apeiron.")
+  target_sources(apeiron PRIVATE packaging/apeiron.icns)
+  set_source_files_properties(packaging/apeiron.icns PROPERTIES
+    MACOSX_PACKAGE_LOCATION Resources)
+endif()
+
 # ------------------------------------------------------------------------------------- assets/
 # assets/ is not in the repository - it is Ambrosia's artwork, and tools/extract_assets.py makes it
 # from your own copy of the game. A fresh clone therefore has no assets/ to copy, and `cmake -E
@@ -57,8 +100,16 @@ endif()
 # with nothing but "Error copying directory" to go on. So the copy is attached only when the folder
 # is there, and when it is not, the build says what to run instead and still succeeds.
 if(EXISTS ${CMAKE_SOURCE_DIR}/assets)
-  add_custom_command(TARGET apeiron POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:apeiron>/assets)
+  if(APPLE)
+    # Inside the bundle, where SDL_GetBasePath points, rather than next to the executable in
+    # Contents/MacOS where nothing would look for it.
+    add_custom_command(TARGET apeiron POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets
+              $<TARGET_BUNDLE_CONTENT_DIR:apeiron>/Resources/assets)
+  else()
+    add_custom_command(TARGET apeiron POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:apeiron>/assets)
+  endif()
 else()
   message(STATUS
     "apeiron: no assets/ directory yet - the game will need one to run.\n"

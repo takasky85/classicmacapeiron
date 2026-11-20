@@ -32,8 +32,24 @@ permissions:
   contents: write
 
 jobs:
+  # One stamp for the whole release, worked out once on Linux where the time zone database is
+  # certainly there. Doing it inside each build would give the three archives three different
+  # stamps, and Windows bash cannot be relied on to know what America/Los_Angeles is.
+  stamp:
+    name: stamp the build
+    runs-on: ubuntu-latest
+    outputs:
+      stamp: ${{ steps.s.outputs.stamp }}
+      name: ${{ steps.s.outputs.name }}
+    steps:
+      - id: s
+        run: |
+          echo "stamp=$(TZ=America/Los_Angeles date +%y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+          echo "name=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.name }}
+    needs: stamp
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -57,7 +73,7 @@ jobs:
             # ran as two commands, the second being `x86_64`, which exited 127 with "command not
             # found" after cmake had already configured for arm64 alone.
             cmake_extra: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"'
-            binary: apeiron
+            binary: Apeiron.app
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +107,8 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DAPEIRON_STATIC_SDL=ON
+          -DAPEIRON_BUILD_STAMP=${{ needs.stamp.outputs.stamp }}
+          -DAPEIRON_BUILD_NAME=${{ needs.stamp.outputs.name }}
           ${{ matrix.cmake_extra }}
 
       - name: build
@@ -102,13 +120,21 @@ jobs:
         shell: bash
         run: |
           set -e
-          exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
-          test -n "$exe" || { echo "no ${{ matrix.binary }} under build/"; find build -maxdepth 3 -type f | head -40; exit 1; }
-          echo "found $exe"
-
           stage="apeiron-${{ matrix.name }}"
           mkdir -p "$stage"
-          cp "$exe" "$stage/"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # A bundle, not a file: copy the whole .app across with its icon and Info.plist.
+            app=$(find build -maxdepth 3 -name 'Apeiron.app' -type d | head -1)
+            test -n "$app" || { echo "no Apeiron.app under build/"; find build -maxdepth 3 | head -40; exit 1; }
+            echo "found $app"
+            cp -R "$app" "$stage/"
+            exe="$app/Contents/MacOS/Apeiron"
+          else
+            exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
+            test -n "$exe" || { echo "no ${{ matrix.binary }} under build/"; find build -maxdepth 3 -type f | head -40; exit 1; }
+            echo "found $exe"
+            cp "$exe" "$stage/"
+          fi
           cp README.md "$stage/"
           find build/_deps -name 'LICENSE.txt' -path '*sdl*' -exec cp {} "$stage/SDL-LICENSE.txt" \; || true
 
@@ -126,7 +152,10 @@ jobs:
 
               apeiron /some/where/assets
 
-          Without it the game stops at startup and says "missing assets".
+          On a Mac, put it beside Apeiron.app or inside Apeiron.app/Contents/Resources.
+
+          If the game cannot find it, it puts up a folder picker and remembers what you choose,
+          so you only have to point at it once.
 
           The port and its tools are in this repository; see README.md.
           SDL3 is linked statically and is zlib-licensed - see SDL-LICENSE.txt.
@@ -144,7 +173,11 @@ jobs:
         shell: bash
         run: |
           set +e
-          exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            exe=$(find build -maxdepth 4 -path '*Apeiron.app/Contents/MacOS/Apeiron' | head -1)
+          else
+            exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
+          fi
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$exe" ./no-such-assets
           status=$?
           set -e
@@ -190,7 +223,7 @@ jobs:
             | - | - |
             | `apeiron-windows-x86_64.zip` | Windows 10/11, 64-bit |
             | `apeiron-linux-x86_64.tar.gz` | Linux, 64-bit |
-            | `apeiron-macos-universal.tar.gz` | macOS, Apple silicon and Intel |
+            | `apeiron-macos-universal.tar.gz` | macOS, Apple silicon and Intel - a .app bundle |
 
             ## What is NOT in them
 

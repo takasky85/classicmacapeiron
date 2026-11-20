@@ -7,7 +7,12 @@
 
 int main(int argc, char **argv)
 {
-    const char *dir = argc > 1 ? argv[1] : "assets";
+    /* Where the artwork is. A path on the command line wins; otherwise the usual places are tried
+     * in turn, which on a Mac includes inside the .app, and the one that worked last time is
+     * remembered. If none of them has it the game asks, once the window is up. */
+    static char found[1200];
+    const char *dir = argc > 1 ? argv[1] : NULL;
+    if (!dir) dir = assets_find_dir(found, sizeof found);
 
     /* The saved options are read before the window exists, because whether it opens maximized has
      * to be one of the flags it is created with: asking a window that is already up to maximize
@@ -15,9 +20,29 @@ int main(int argc, char **argv)
     assets_load_options(dir);
 
     if (!plat_init("Apeiron (SDL3 port)")) return 1;
+
+    /* Asked again now that SDL is up: SDL_GetBasePath and SDL_GetPrefPath are the two candidates
+     * that matter inside a .app, and neither answers before SDL_Init has run. */
+    if (argc <= 1) {
+        dir = assets_find_dir(found, sizeof found);
+        assets_load_options(dir);
+    }
     if (!assets_load(dir)) {
-        SDL_Log("missing assets - run tools/extract_assets.py first (looked in '%s')", dir);
-        return 1;
+        /* Nothing where it was expected. Rather than exit with a line in a log nobody will read -
+         * and a .app started from the Finder has no console at all - put up the system's folder
+         * picker and take what it is given. The choice is remembered for next time. */
+        SDL_Log("no artwork in '%s' - asking", dir);
+        if (!assets_pick_dir(found, sizeof found) || !assets_load(found)) {
+            plat_message("Apeiron needs its artwork",
+                         "This build does not include the game's artwork, fonts or sounds - "
+                         "they are Ambrosia Software's. Make an 'assets' folder from your own "
+                         "copy of Apeiron with tools/extract_assets.py, then point the game at "
+                         "it. See README.md.");
+            return 1;
+        }
+        dir = found;
+        assets_remember_dir(dir);
+        assets_load_options(dir);
     }
     assets_load_options(dir);          /* again, for the artwork pack: that one needs the sheets */
 

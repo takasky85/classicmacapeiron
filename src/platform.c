@@ -19,6 +19,10 @@ static bool button_event;
 static int  click_x, click_y;
 static bool have_click;
 static float last_scale = 1.0f;     /* fractional under "Fill the window" */
+/* Pixels per logical unit. One on an ordinary display, two on a Retina Mac. The renderer works in
+ * pixels and SDL reports pointer positions in logical units, so every pointer coordinate is
+ * multiplied by this before it is compared with anything the renderer produced. */
+static float px_density = 1.0f;
 static int  last_gx, last_gy;
 static bool audio_ok;
 static float rel_x, rel_y;          /* mouse movement since the last mouse_delta() */
@@ -126,7 +130,14 @@ bool plat_init(const char *title)
 
     /* SDL_WINDOW_MAXIMIZED at creation is the only form of the request a window manager cannot
      * quietly drop, which asking an already-open window to maximize plainly can be. */
-    SDL_WindowFlags wf = SDL_WINDOW_RESIZABLE | (opt_maximize ? SDL_WINDOW_MAXIMIZED : 0);
+    /* SDL_WINDOW_HIGH_PIXEL_DENSITY is what keeps the pixels square on a Retina Mac. Without it the
+     * renderer draws at the window's logical size and the compositor stretches that to the display,
+     * smoothly - so the picture arrives blurred however the textures are sampled, which is the
+     * bilinear look the macOS build had. With it the renderer works at the real backing size and
+     * the nearest-neighbour scaling below is the only scaling that happens. The catch is that mouse
+     * coordinates stay in logical units, so everything that reads one multiplies by px_density. */
+    SDL_WindowFlags wf = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                         (opt_maximize ? SDL_WINDOW_MAXIMIZED : 0);
     if (!SDL_CreateWindowAndRenderer(title, win_w, win_h, wf, &g_win, &g_ren)) {
         SDL_Log("window creation failed: %s", SDL_GetError());
         return false;
@@ -164,8 +175,8 @@ void pump(void)
         }
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             button_event = true; have_click = true;
-            click_x = (int)((e.button.x - last_gx) / last_scale);
-            click_y = (int)((e.button.y - last_gy) / last_scale);
+            click_x = (int)((e.button.x * px_density - last_gx) / last_scale);
+            click_y = (int)((e.button.y * px_density - last_gy) / last_scale);
         }
         if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) has_focus = false;
         if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) has_focus = true;
@@ -223,8 +234,8 @@ void mouse_pos(int *x, int *y)
 {
     float mx, my;
     SDL_GetMouseState(&mx, &my);
-    *x = (int)((mx - last_gx) / last_scale);
-    *y = (int)((my - last_gy) / last_scale);
+    *x = (int)((mx * px_density - last_gx) / last_scale);
+    *y = (int)((my * px_density - last_gy) / last_scale);
 }
 
 void flush_clicks(void)         /* FlushEvents(everyEvent, 0) */
@@ -283,6 +294,7 @@ void mouse_delta(float *dx, float *dy)
 {
     pump();
     float s = last_scale > 0 ? last_scale : 1.0f;
+    s /= px_density > 0 ? px_density : 1.0f;   /* the deltas below are in logical units */
     if (abs_on) {
         float mx = 0, my = 0;
         SDL_GetMouseState(&mx, &my);
@@ -388,6 +400,8 @@ void present(void)
     /* whole-number scale, centred; outside the 640x480 area is "the rest of the monitor" */
     int ow, oh;
     SDL_GetRenderOutputSize(g_ren, &ow, &oh);
+    px_density = SDL_GetWindowPixelDensity(g_win);
+    if (px_density <= 0) px_density = 1.0f;
     int s = ow / SCREEN_W < oh / SCREEN_H ? ow / SCREEN_W : oh / SCREEN_H;
     if (s < 1) s = 1;
     int gw = SCREEN_W * s, gh = SCREEN_H * s;
@@ -1063,4 +1077,50 @@ void music_pump(void)
         music_state = 2;
     }
     else music_state = 0;
+}
+
+/* ---- asking for the artwork -------------------------------------------------------------------
+ * SDL's folder picker is asynchronous: it calls back while events are being pumped, so this shows
+ * it and then keeps the window alive until the callback has fired. A .app started from the Finder
+ * has no console, so this is the only way it can say what it needs.
+ */
+typedef struct { char *out; size_t n; bool done, got; } PickState;
+
+static void SDLCALL pick_cb(void *userdata, const char * const *list, int filter)
+{
+    PickState *st = (PickState *)userdata;
+    (void)filter;
+    if (list && list[0]) {
+        snprintf(st->out, st->n, "%s", list[0]);
+        st->got = true;
+    }
+    st->done = true;
+}
+
+bool assets_pick_dir(char *out, size_t n)
+{
+    PickState st = { out, n, false, false };
+    /* With no real display there is nobody to answer, and waiting for a dialog that will never
+     * appear would hang a build. The release workflow runs the game exactly like this to check it
+     * refuses a missing assets folder without crashing. */
+    const char *drv = SDL_GetCurrentVideoDriver();
+    if (!drv || !strcmp(drv, "dummy") || !strcmp(drv, "offscreen")) return false;
+    plat_message("Where is the artwork?",
+                 "This build does not include the game's artwork, fonts or sounds - they are "
+                 "Ambrosia Software's. Choose the 'assets' folder you made from your own copy "
+                 "of Apeiron with tools/extract_assets.py.");
+    SDL_ShowOpenFolderDialog(pick_cb, &st, g_win, NULL, false);
+    Uint64 giveup = SDL_GetTicks() + 300000;
+    while (!st.done && SDL_GetTicks() < giveup) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e))
+            if (e.type == SDL_EVENT_QUIT) return false;
+        SDL_Delay(16);
+    }
+    return st.got;
+}
+
+void plat_message(const char *title, const char *body)
+{
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, title, body, g_win);
 }
