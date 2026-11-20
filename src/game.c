@@ -886,7 +886,8 @@ static void start_level(void)
     /* Those dice work out at about two crossings in the first fourteen waves, which is faithful and
      * not much fun. With the Enhancements switch on he is due every wave, from the first, and comes
      * back a few seconds after each crossing - the schedule Larry is on. */
-    if (enh[ENH_MORE_GORDON] && !gecko_at) gecko_at = rnd(10) * 60 + 120;
+    if (enh[ENH_MORE_VISITS] && !gecko_at) gecko_at = rnd(10) * 60 + 120;
+    if (enh[ENH_MORE_VISITS] && !fodder_at) fodder_at = rnd(15) * 60 + 120;
 }
 
 /* ---- drawing ---------------------------------------------------------------------------------- */
@@ -1359,7 +1360,15 @@ static void update_entities(void)
                 if (rnd(2) == 0) e->vy = -e->vy;
                 e->data = rnd(4) == 0;                 /* sprite+0x58: "walk sideways too" */
             }
-            if (e->data) e->x += e->vx;
+            /* +88 is "hold still sideways", not "move sideways". The original sets it on a 1 in 4
+             * and then skips the x update while it is set, so Larry is crossing the field three
+             * times out of four and only now and then stops to bob on the spot. This port had the
+             * test the wrong way round, which cost two things at once: he hardly ever came in off
+             * the right, because entering there puts him at x=408 and he is removed the moment
+             * x+24 reaches 432 - without that first sideways step he was culled on his first
+             * frame - and when he did arrive he hung at the edge bobbing instead of coming at
+             * you (#25). */
+            if (!e->data) e->x += e->vx;
             e->y += e->vy;
             int ix = FIX_WHOLE(e->x), iy = FIX_WHOLE(e->y);
             if (ix < 0 || ix + 24 >= FIELD_W) { e->alive = false; scorp_at = gticks + rnd(360) + 180; break; }
@@ -1394,7 +1403,7 @@ static void update_entities(void)
              * Gordon crosses at most once in a wave unless the Enhancements switch is on. */
             if (FIX_WHOLE(e->x) <= 0) {
                 e->alive = false;
-                if (enh[ENH_MORE_GORDON]) gecko_at = ticks + rnd(300) + 150;
+                if (enh[ENH_MORE_VISITS]) gecko_at = ticks + rnd(300) + 150;
             }
             break;
         }
@@ -1435,7 +1444,11 @@ static void update_entities(void)
             if (ix + 20 > FIELD_W || ix < 0) {
                 sfx(SND_MISSED_IT);
                 e->alive = false;
-                fodder_at = ticks + rnd(600) + 300;
+                /* [FodderMoveProc] hides her and stops there. DAT_1001dac0 is written in exactly
+                 * one place, [StartLevel], and read in exactly one, so the saucer gets one visit
+                 * in a wave and only in one wave out of three. This port was quietly booking her
+                 * a return trip; now only the Enhancements switch does. */
+                if (enh[ENH_MORE_VISITS]) fodder_at = ticks + rnd(600) + 300;
                 break;
             }
             if (iy < 0) { e->y = 0; e->vy = 0; }

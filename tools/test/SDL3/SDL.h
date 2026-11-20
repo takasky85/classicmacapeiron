@@ -72,6 +72,8 @@ typedef unsigned short SDL_Keymod;
 #define SDL_KMOD_CAPS 0x2000u
 SDL_Keymod SDL_GetModState(void);
 bool SDL_SetWindowRelativeMouseMode(SDL_Window *, bool);
+void SDL_WarpMouseInWindow(SDL_Window *, float, float);
+bool SDL_GetWindowRelativeMouseMode(SDL_Window *);
 unsigned int SDL_GetRelativeMouseState(float *, float *);
 void SDL_free(void *);
 typedef unsigned int SDL_AudioDeviceID;

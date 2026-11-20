@@ -685,6 +685,8 @@ static int page_rows(int page, Row *r, int max)
         ADD(ROW_CHECK, 2, 0, "Mouse",    "move the shooter; the button fires");
         ADD(ROW_CHECK, 2, 1, "Keyboard", "arrows or WASD; space or control fires");
         ADD(ROW_CHECK, 2, 2, "Controller", NULL);
+        ADD(ROW_CHECK, 10, 0, "Track the pointer directly",
+            "for virtual machines and remote desktops, where mouse movement comes out jerky");
         ADD(ROW_VALUE, 3, 0, "Stick dead zone", NULL);
         ADD(ROW_NOTE, 0, 0, "In play: Caps Lock or Start pauses, Escape quits to the title.", NULL);
         break;
@@ -712,8 +714,8 @@ static int page_rows(int page, Row *r, int max)
             "keeps the psychedelic mushroom's colour cycling off");
         ADD(ROW_CHECK, 6, ENH_TALLY_PICKUP, "Coins count during the tally",
             "a coin that reaches you while the bonus counts off is yours");
-        ADD(ROW_CHECK, 6, ENH_MORE_GORDON, "Gordon visits more often",
-            "the original gives him one crossing in one wave in four, from wave 4");
+        ADD(ROW_CHECK, 6, ENH_MORE_VISITS, "Gordon and the saucer call more often",
+            "the original gives each of them one visit a wave, and not every wave");
         ADD(ROW_VALUE, 9, 0, "Starting wave", NULL);
         ADD(ROW_NOTE, 0, 0, "Starting past the first forfeits the high score.", NULL);
         ADD(ROW_NOTE, 0, 0, "Still to come: a Mac OS boot screen on the way in.", NULL);
@@ -743,6 +745,7 @@ static bool row_state(const Row *r)
     case 6: return enh[r->index];
     case 7: return debug_spawn;
     case 8: return opt_maximize;
+    case 10: return opt_mouse_abs;
     default: return false;
     }
 }
@@ -757,6 +760,7 @@ static void row_toggle(const Row *r)
         else opt_pad = !opt_pad;
         break;
     case 8: opt_maximize = !opt_maximize; break;
+    case 10: opt_mouse_abs = !opt_mouse_abs; mouse_abs_changed(); break;
     case 9:
         opt_start_wave++;
         if (opt_start_wave > 30) opt_start_wave = 1;
@@ -785,7 +789,7 @@ static const int BTN_W = 67, BTN_H = 20, BTN_Y = SCREEN_H - 50;
 
 typedef struct {
     int  scale, deadzone, start_wave, pack;
-    bool mouse, keyboard, pad, maximize, spawn;
+    bool mouse, keyboard, pad, maximize, spawn, mabs;
     bool cheat[CH_COUNT], enh[ENH_COUNT];
 } OptSnapshot;
 
@@ -793,7 +797,7 @@ static void opt_snapshot(OptSnapshot *s)
 {
     s->scale = opt_scale; s->deadzone = opt_pad_deadzone; s->start_wave = opt_start_wave;
     s->pack = assets_pack();
-    s->mouse = opt_mouse; s->keyboard = opt_keyboard; s->pad = opt_pad;
+    s->mouse = opt_mouse; s->keyboard = opt_keyboard; s->pad = opt_pad; s->mabs = opt_mouse_abs;
     s->maximize = opt_maximize; s->spawn = debug_spawn;
     memcpy(s->cheat, cheat, sizeof s->cheat);
     memcpy(s->enh, enh, sizeof s->enh);
@@ -803,6 +807,7 @@ static void opt_restore(const OptSnapshot *s)
 {
     opt_scale = s->scale; opt_pad_deadzone = s->deadzone; opt_start_wave = s->start_wave;
     opt_mouse = s->mouse; opt_keyboard = s->keyboard; opt_pad = s->pad;
+    if (opt_mouse_abs != s->mabs) { opt_mouse_abs = s->mabs; mouse_abs_changed(); }
     opt_maximize = s->maximize; debug_spawn = s->spawn;
     memcpy(cheat, s->cheat, sizeof s->cheat);
     memcpy(enh, s->enh, sizeof s->enh);

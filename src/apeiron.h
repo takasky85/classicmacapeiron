@@ -76,7 +76,8 @@ bool take_key(char *c);                    /* one typed character, for the title
 bool window_focused(void);
 bool caps_lock_down(void);                /* [CapsLockDown]: GetKeys bit 0x3e */
 void mouse_pos(int *x, int *y);           /* in 640x480 screen coordinates */
-void mouse_relative(bool on);             /* take the pointer over, so steering has no edges */
+void mouse_relative(bool on);
+void mouse_abs_changed(void);             /* take the pointer over, so steering has no edges */
 
 /* game controllers (#14): SDL gamepads, opened as they appear */
 bool pad_present(void);
@@ -190,7 +191,7 @@ extern bool cheat[CH_COUNT];
 
 /* enhancements beyond the original, each switchable on the Options screen */
 enum { ENH_WEAPON_FLY = 0, ENH_WEAPON_ANIM, ENH_ATTRACT, ENH_NO_PSYC, ENH_TALLY_PICKUP,
-       ENH_MORE_GORDON, ENH_COUNT };
+       ENH_MORE_VISITS, ENH_COUNT };
 /* Stamped into the title screen so a build can be told apart from the one before it. */
 #define APEIRON_BUILD (__DATE__ " " __TIME__)
 extern bool enh[ENH_COUNT];
@@ -199,7 +200,7 @@ extern bool debug_spawn;                  /* the Debug page's F-key creature spa
 /* graphics and control settings, likewise */
 enum { SCALE_INTEGER = 0, SCALE_FIT, SCALE_COUNT };
 extern int  opt_scale;
-extern bool opt_mouse, opt_keyboard, opt_pad;
+extern bool opt_mouse, opt_keyboard, opt_pad, opt_mouse_abs;
 extern int  opt_pad_deadzone;      /* percent */
 extern bool opt_maximize;          /* open filling the screen */
 extern int  opt_start_wave;        /* 1 unless the Enhancements page says otherwise */
