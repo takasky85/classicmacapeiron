@@ -174,6 +174,10 @@ typedef struct {
 } Assets;
 extern Assets A;
 bool assets_load(const char *dir);
+const char *assets_find_dir(char *out, size_t n);   /* the usual places, and the remembered one */
+void assets_remember_dir(const char *dir);
+bool assets_pick_dir(char *out, size_t n);         /* the system's folder picker */
+void plat_message(const char *title, const char *body);
 bool assets_load_sprites(void);
 
 /* the artwork/sound packs that ship with the game, and the cheats of STR# 132 */
@@ -191,7 +195,7 @@ extern bool cheat[CH_COUNT];
 
 /* enhancements beyond the original, each switchable on the Options screen */
 enum { ENH_WEAPON_FLY = 0, ENH_WEAPON_ANIM, ENH_ATTRACT, ENH_NO_PSYC, ENH_TALLY_PICKUP,
-       ENH_MORE_VISITS, ENH_COUNT };
+       ENH_COUNT };
 /* Stamped into the title screen so a build can be told apart from the one before it. */
 #define APEIRON_BUILD (__DATE__ " " __TIME__)
 extern bool enh[ENH_COUNT];

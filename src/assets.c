@@ -16,7 +16,7 @@ const char *const PACK_LABEL[PACK_COUNT] = {
 static char asset_root[768];
 
 /* Settings the Options screen owns. The defaults are how the game played before it existed. */
-bool enh[ENH_COUNT] = { true, true, true, false, true, false };
+bool enh[ENH_COUNT] = { true, true, true, false, true };
 int  opt_scale = SCALE_INTEGER;
 bool opt_mouse = true, opt_keyboard = true, opt_pad = true;
 bool opt_mouse_abs = false;        /* read the pointer's position instead of SDL's deltas */
@@ -270,6 +270,74 @@ bool assets_load_sprites(void)
     static const char *wn[5] = { "wpn_curve", "wpn_freemove", "wpn_machinegun", "wpn_shield", "wpn_lock" };
     for (int i = 0; i < 5; i++) ok = sprite_load_packed(&A.wpn[i], wn[i]) && ok;
     return ok;
+}
+
+/* ---- finding the artwork ---------------------------------------------------------------------
+ * The game is shipped without it, so the folder could be anywhere. These are the places worth
+ * looking, in the order worth looking in them; the pointer file in the preferences directory is
+ * where the answer goes once somebody has had to tell us.
+ */
+static bool has_assets(const char *dir)
+{
+    if (!dir || !*dir) return false;
+    char p[1200];
+    snprintf(p, sizeof p, "%s/spr/shooter.bmp", dir);
+    FILE *f = fopen(p, "rb");
+    if (!f) return false;
+    fclose(f);
+    return true;
+}
+
+static void pointer_file(char *out, size_t n)
+{
+    char *pref = SDL_GetPrefPath("apeiron-sdl3", "apeiron");
+    if (!pref) { out[0] = 0; return; }
+    snprintf(out, n, "%sassets-path.txt", pref);
+    SDL_free(pref);
+}
+
+void assets_remember_dir(const char *dir)
+{
+    char p[1200];
+    pointer_file(p, sizeof p);
+    if (!p[0]) return;
+    FILE *f = fopen(p, "wb");
+    if (!f) return;
+    fprintf(f, "%s\n", dir);
+    fclose(f);
+}
+
+const char *assets_find_dir(char *out, size_t n)
+{
+    const char *base = SDL_GetBasePath();         /* inside a .app this is Contents/Resources/ */
+    const char *tries[6];
+    char b1[1200], b2[1200], b3[1200], remembered[1200];
+    int t = 0;
+    tries[t++] = "assets";                        /* beside whatever launched us */
+    if (base) {
+        snprintf(b1, sizeof b1, "%sassets", base);            tries[t++] = b1;
+        snprintf(b2, sizeof b2, "%s../Resources/assets", base); tries[t++] = b2;
+        snprintf(b3, sizeof b3, "%s../../../assets", base);   tries[t++] = b3;  /* beside the .app */
+    }
+    char pf[1200];
+    pointer_file(pf, sizeof pf);
+    remembered[0] = 0;
+    if (pf[0]) {
+        FILE *f = fopen(pf, "rb");
+        if (f) {
+            if (fgets(remembered, sizeof remembered, f)) {
+                size_t len = strlen(remembered);
+                while (len && (remembered[len - 1] == '\n' || remembered[len - 1] == '\r'))
+                    remembered[--len] = 0;
+                if (remembered[0]) tries[t++] = remembered;
+            }
+            fclose(f);
+        }
+    }
+    for (int i = 0; i < t; i++)
+        if (has_assets(tries[i])) { snprintf(out, n, "%s", tries[i]); return out; }
+    snprintf(out, n, "%s", "assets");             /* nothing found; the caller will ask */
+    return out;
 }
 
 bool assets_load(const char *dir)

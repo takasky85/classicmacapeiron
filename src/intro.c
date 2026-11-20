@@ -137,14 +137,25 @@ void draw_title_screen(void)
      * screenshot can be matched to the archive it came from. A.str[1] above is the original's own
      * version line; this sits to the right of it, short of the rule at x 380. */
     {
+        char stamp[96];
+#ifdef APEIRON_BUILD_STAMP
+        /* CMake supplies both, and the release workflow works the stamp out in Pacific time so it
+         * matches the clock the archives are named by. APEIRON_BUILD_NAME is the release's own tag
+         * from GitHub, so a screenshot says which download it came from. */
+        if (APEIRON_BUILD_NAME[0])
+            snprintf(stamp, sizeof stamp, "SDL3 port  %s  %s", APEIRON_BUILD_NAME, APEIRON_BUILD_STAMP);
+        else
+            snprintf(stamp, sizeof stamp, "SDL3 port  %s", APEIRON_BUILD_STAMP);
+#else
+        /* Built outside CMake: fall back to when the compiler ran, in its own time zone. */
         static const char mons[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
         const char *d = __DATE__, *t = __TIME__;      /* "Nov 14 2026", "17:49:00" */
         int mon = 0;
         for (int i = 0; i < 12; i++)
             if (!strncmp(mons + i * 3, d, 3)) { mon = i + 1; break; }
-        char stamp[64];
         snprintf(stamp, sizeof stamp, "SDL3 port  %c%c%02d%c%c%c%c%c%c",
                  d[9], d[10], mon, d[4] == ' ' ? '0' : d[4], d[5], t[0], t[1], t[3], t[4]);
+#endif
         int sw = text_width(&A.geneva9, stamp, 0);
         draw_text(&A.geneva9, 376 - sw, SCREEN_H - 2, stamp, gray, 0);
     }
@@ -714,8 +725,6 @@ static int page_rows(int page, Row *r, int max)
             "keeps the psychedelic mushroom's colour cycling off");
         ADD(ROW_CHECK, 6, ENH_TALLY_PICKUP, "Coins count during the tally",
             "a coin that reaches you while the bonus counts off is yours");
-        ADD(ROW_CHECK, 6, ENH_MORE_VISITS, "Gordon and the saucer call more often",
-            "the original gives each of them one visit a wave, and not every wave");
         ADD(ROW_VALUE, 9, 0, "Starting wave", NULL);
         ADD(ROW_NOTE, 0, 0, "Starting past the first forfeits the high score.", NULL);
         ADD(ROW_NOTE, 0, 0, "Still to come: a Mac OS boot screen on the way in.", NULL);

@@ -158,3 +158,12 @@ bool SDL_SetWindowSize(SDL_Window *w,int x,int y){(void)w;(void)x;(void)y;return
 bool SDL_GetWindowSize(SDL_Window *w,int *x,int *y){(void)w;if(x)*x=640;if(y)*y=480;return true;}
 void SDL_PumpEvents(void){}
 SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *w){(void)w;return SDL_WINDOW_INPUT_FOCUS|SDL_WINDOW_MOUSE_FOCUS;}
+
+void SDL_ShowOpenFolderDialog(SDL_DialogFileCallback cb, void *ud, SDL_Window *w, const char *d, bool m)
+{ (void)w;(void)d;(void)m; if(cb) cb(ud, NULL, -1); }
+bool SDL_ShowSimpleMessageBox(Uint32 f, const char *t, const char *m, SDL_Window *w)
+{ (void)f;(void)w; printf("MSGBOX: %s - %s\n", t?t:"", m?m:""); return true; }
+char *SDL_GetPrefPath(const char *o, const char *a){ (void)o;(void)a; char *p=malloc(8); if(p) snprintf(p,8,"./"); return p; }
+const char *SDL_GetBasePath(void){ return "./"; }
+const char *SDL_GetCurrentVideoDriver(void){ return "dummy"; }
+float SDL_GetWindowPixelDensity(SDL_Window *w){ (void)w; return 1.0f; }
