@@ -116,6 +116,8 @@ bool SDL_HideCursor(void){ return true; }
 bool SDL_ShowCursor(void){ return true; }
 
 bool SDL_SetWindowRelativeMouseMode(SDL_Window *w, bool on){ (void)w; (void)on; return true; }
+void SDL_WarpMouseInWindow(SDL_Window *w, float x, float y){ (void)w; (void)x; (void)y; }
+bool SDL_GetWindowRelativeMouseMode(SDL_Window *w){ (void)w; return false; }
 unsigned int SDL_GetRelativeMouseState(float *x, float *y){
   static float px=-1, py=-1;
   float dx=0, dy=0;

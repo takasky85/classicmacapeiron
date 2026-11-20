@@ -238,21 +238,77 @@ void flush_clicks(void)         /* FlushEvents(everyEvent, 0) */
 /* The shooter used to be steered by the absolute pointer, which stopped dead the moment the pointer
  * left the 432-wide playfield - easy to do in a maximised window, and it read as the mouse sticking.
  * During a game the pointer is taken over instead and read as movement, so it has no edges at all. */
+/* "Track the pointer directly" (opt_mouse_abs). Relative mouse mode asks SDL to turn whatever the
+ * pointing device reports into a stream of deltas. For an ordinary mouse that is what the device
+ * already sends and the answer is exact, but a virtual machine's pointer is a graphics tablet: it
+ * reports where it *is*, in tablet units, and SDL has to difference and rescale that. Under
+ * VirtualBox the result comes out in visible steps rather than smoothly.
+ *
+ * So this mode does not ask. It reads the pointer's own position once a frame and differences that
+ * itself, which is the same arithmetic without the unit conversion in the middle, and recentres the
+ * pointer whenever it nears the edge of the window so it never runs out of room - the warp is
+ * accounted for rather than measured, so it does not register as movement. */
+static bool  abs_on;                /* relative mode is off and we are tracking the pointer */
+static bool  abs_have;              /* abs_px/py hold a position to difference against */
+static float abs_px, abs_py;
+
+static void abs_recentre(void)
+{
+    int ww = 0, wh = 0;
+    SDL_GetWindowSize(g_win, &ww, &wh);
+    if (ww <= 0 || wh <= 0) return;
+    abs_px = ww * 0.5f; abs_py = wh * 0.5f;
+    SDL_WarpMouseInWindow(g_win, abs_px, abs_py);
+    abs_have = true;
+}
+
 void mouse_relative(bool on)
 {
-    SDL_SetWindowRelativeMouseMode(g_win, on);
+    abs_on = on && opt_mouse_abs;
+    if (abs_on) {
+        SDL_SetWindowRelativeMouseMode(g_win, false);
+        SDL_HideCursor();                       /* relative mode would have done this for us */
+        abs_have = false;
+        abs_recentre();
+    } else {
+        SDL_SetWindowRelativeMouseMode(g_win, on);
+        if (!on) SDL_ShowCursor();
+    }
     pump();
     rel_x = rel_y = 0;              /* drop whatever built up on the way in or out */
 }
 
-/* The accumulated movement since the last call, in 640x480 screen pixels. */
+/* The movement since the last call, in 640x480 screen pixels. */
 void mouse_delta(float *dx, float *dy)
 {
     pump();
     float s = last_scale > 0 ? last_scale : 1.0f;
+    if (abs_on) {
+        float mx = 0, my = 0;
+        SDL_GetMouseState(&mx, &my);
+        if (!abs_have) { abs_px = mx; abs_py = my; abs_have = true; }
+        float ax = mx - abs_px, ay = my - abs_py;
+        abs_px = mx; abs_py = my;
+        int ww = 0, wh = 0;
+        SDL_GetWindowSize(g_win, &ww, &wh);
+        if (ww > 0 && wh > 0 &&
+            (mx < ww * 0.15f || mx > ww * 0.85f || my < wh * 0.15f || my > wh * 0.85f))
+            abs_recentre();
+        rel_x = rel_y = 0;          /* the warp's own motion events are not movement */
+        *dx = ax / s;
+        *dy = ay / s;
+        return;
+    }
     *dx = rel_x / s;
     *dy = rel_y / s;
     rel_x = rel_y = 0;
+}
+
+/* The Options screen flipping the switch mid-session: whichever mode is wanted has to be set up
+ * now, because the game only calls mouse_relative when it enters or leaves the playfield. */
+void mouse_abs_changed(void)
+{
+    if (abs_on || SDL_GetWindowRelativeMouseMode(g_win)) mouse_relative(true);
 }
 
 bool take_click_only(void)      /* Button(): the mouse, not the keyboard */
