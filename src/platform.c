@@ -685,7 +685,8 @@ void draw_sprite_disc(const Sprite *s, int frame, int x, int y, int cx, int cy, 
     if (frame < 1) frame = 1;
     if (frame > s->count) frame = ((frame - 1) % s->count) + 1;
 
-    static uint8_t cov[64 * 64];            /* coverage 0..16, for sprites up to 64x64 */
+#define DISC_SS 8                           /* samples per axis: 64 coverage levels, not 16 */
+    static uint8_t cov[64 * 64];
     static int cov_w, cov_h;
     if (s->w <= 64 && s->h <= 64 && (cov_w != s->w || cov_h != s->h)) {
         cov_w = s->w; cov_h = s->h;
@@ -694,10 +695,10 @@ void draw_sprite_disc(const Sprite *s, int frame, int x, int y, int cx, int cy, 
         for (int row = 0; row < s->h; row++)
             for (int col = 0; col < s->w; col++) {
                 int n = 0;
-                for (int sy = 0; sy < 4; sy++)
-                    for (int sx = 0; sx < 4; sx++) {
-                        float px = (float)col + ((float)sx + 0.5f) / 4.0f - ox;
-                        float py = (float)row + ((float)sy + 0.5f) / 4.0f - oy;
+                for (int sy = 0; sy < DISC_SS; sy++)
+                    for (int sx = 0; sx < DISC_SS; sx++) {
+                        float px = (float)col + ((float)sx + 0.5f) / DISC_SS - ox;
+                        float py = (float)row + ((float)sy + 0.5f) / DISC_SS - oy;
                         if (px * px + py * py <= r * r) n++;
                     }
                 cov[row * s->w + col] = (uint8_t)n;
@@ -719,12 +720,13 @@ void draw_sprite_disc(const Sprite *s, int frame, int x, int y, int cx, int cy, 
             if (v == s->trans) continue;
             int n = cov[row * s->w + col];
             if (n == 0) continue;
-            if (n == 16) { fb[dy * SCREEN_W + dx] = v; continue; }
+            if (n == DISC_SS * DISC_SS) { fb[dy * SCREEN_W + dx] = v; continue; }
             const Rgb *a = &s->img.pal[v];               /* the sprite's own colour */
             const Rgb *b = &table[fb[dy * SCREEN_W + dx]];   /* and what it is covering */
-            int r = (a->r * n + b->r * (16 - n)) / 16;
-            int g = (a->g * n + b->g * (16 - n)) / 16;
-            int bl = (a->b * n + b->b * (16 - n)) / 16;
+            int m = DISC_SS * DISC_SS;
+            int r = (a->r * n + b->r * (m - n)) / m;
+            int g = (a->g * n + b->g * (m - n)) / m;
+            int bl = (a->b * n + b->b * (m - n)) / m;
             fb[dy * SCREEN_W + dx] = find_color(r, g, bl);
         }
     }

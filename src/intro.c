@@ -712,6 +712,8 @@ static int page_rows(int page, Row *r, int max)
             "keeps the psychedelic mushroom's colour cycling off");
         ADD(ROW_CHECK, 6, ENH_TALLY_PICKUP, "Coins count during the tally",
             "a coin that reaches you while the bonus counts off is yours");
+        ADD(ROW_CHECK, 6, ENH_MORE_GORDON, "Gordon visits more often",
+            "the original gives him one crossing in one wave in four, from wave 4");
         ADD(ROW_VALUE, 9, 0, "Starting wave", NULL);
         ADD(ROW_NOTE, 0, 0, "Starting past the first forfeits the high score.", NULL);
         ADD(ROW_NOTE, 0, 0, "Still to come: a Mac OS boot screen on the way in.", NULL);

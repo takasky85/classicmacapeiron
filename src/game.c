@@ -74,6 +74,13 @@ static long score, next_extra;
 static int  lives, wave, mult;
 static bool cheated;              /* a cheat other than PERNTS or SCUMDOG has been used */
 static int  ticks;
+/* DAT_1001da90 is the Mac's own tick count: it runs for as long as the program does and a wave
+ * change means nothing to it. This port restarts `ticks` at zero for each wave, which is fine for
+ * everything [StartLevel] schedules, because those are all set from zero straight afterwards - but
+ * not for Larry, whose next appearance is the one appointment nothing resets between waves. Written
+ * against `ticks` it was left pointing at a time the new wave would not reach for another minute
+ * and a half, and usually never, so he turned up once in a whole game (#25). */
+static long gticks;
 static int  pede_left;                     /* [GameLoop] ends the wave when this reaches 0 */
 static int  shots_out, shot_limit, shot_delay, last_shot;
 static int  player_speed;
@@ -876,6 +883,10 @@ static void start_level(void)
      * colour is one of the first three of its group, which is how the original does it. */
     if (rnd(4) == 1) gecko_at = rnd(20) * 60 + 120;
     if (shroom_level < 3) gecko_at = 0;
+    /* Those dice work out at about two crossings in the first fourteen waves, which is faithful and
+     * not much fun. With the Enhancements switch on he is due every wave, from the first, and comes
+     * back a few seconds after each crossing - the schedule Larry is on. */
+    if (enh[ENH_MORE_GORDON] && !gecko_at) gecko_at = rnd(10) * 60 + 120;
 }
 
 /* ---- drawing ---------------------------------------------------------------------------------- */
@@ -1056,7 +1067,15 @@ static void draw_frame(void)
                 }
                 if (powerup[i - 1] <= POWERUP_WARN) show = (player_anim / 6) % 2 == 0;
             }
-            if (show) draw_sprite(w, f, wx + dx, wy + dy);
+            /* The panel's shield icon gets the circular mask too - the issue asks for the icon as
+             * well as the playfield animation, and on the panel's flat black it is the one place
+             * the soft rim has something to fade into. */
+            if (show) {
+                if (w == &A.shield)
+                    draw_sprite_disc(w, f, wx + dx, wy + dy, 0, 0, SCREEN_W, SCREEN_H);
+                else
+                    draw_sprite(w, f, wx + dx, wy + dy);
+            }
         }
     }
     /* [GameHouseKeeping] calls [DrawNumDisplay](wave, .., pad) with pad set below ten, which makes
@@ -1129,7 +1148,7 @@ static void shot_hits(Ent *t)
             add_score((long)v * mult);
             create_points(t->x, t->y, v * mult, false);
             create_expl(t->x, t->y, EX_SCORP);
-            scorp_at = ticks + rnd(360) + 360;
+            scorp_at = gticks + rnd(360) + 360;
             t->alive = false;
             break;
         }
@@ -1332,15 +1351,25 @@ static void update_entities(void)
          * own is set; every so often he flips his vertical direction and re-rolls the flag. He eats
          * - PluckShroom - whatever he is standing on, with one of the two munching sounds. */
         case E_SCORP: {
-            if (rnd(score >= 5000 ? 30 : 18) == 1) {
+            /* One roll a frame, and on a 1 he may turn round vertically and may start or stop
+             * drifting sideways. The odds are the way round the original has them: a 1 in 30 under
+             * five thousand points and a 1 in 18 above it, so he gets twitchier as the game goes
+             * on, not steadier. */
+            if (rnd(score < 5000 ? 30 : 18) == 1) {
                 if (rnd(2) == 0) e->vy = -e->vy;
                 e->data = rnd(4) == 0;                 /* sprite+0x58: "walk sideways too" */
             }
             if (e->data) e->x += e->vx;
             e->y += e->vy;
             int ix = FIX_WHOLE(e->x), iy = FIX_WHOLE(e->y);
-            if (ix < 0 || ix + 24 >= FIELD_W) { e->alive = false; scorp_at = ticks + rnd(360) + 180; break; }
-            if (iy < 0) { e->vy = -e->vy; e->y = 0; }
+            if (ix < 0 || ix + 24 >= FIELD_W) { e->alive = false; scorp_at = gticks + rnd(360) + 180; break; }
+            /* He is held in the bottom of the field, not loose over the whole of it. The ceiling
+             * is `DAT_1001dad0 << 4` - the same number the shooter's own movement limit comes off,
+             * so it is row 18 for most of a game and never higher than row 23 - and the floor is
+             * the bottom edge. This port was bouncing him off y=0, which let him spend most of his
+             * time up among the mushrooms where he is no trouble to anybody (#25). */
+            int ceiling = player_speed * CELL;
+            if (iy < ceiling) { e->vy = -e->vy; e->y = FIX(ceiling); }
             if (iy + 24 > FIELD_H) { e->vy = -e->vy; e->y = FIX(FIELD_H - 24); }
             int col = clampi((FIX_WHOLE(e->x) + 12) / CELL, 0, GRID_W - 1);
             int row = clampi((FIX_WHOLE(e->y) + 12) / CELL, 0, GRID_H - 1);
@@ -1362,8 +1391,11 @@ static void update_entities(void)
                 sfx(SND_SPLUT);
             }
             /* [GeckoMoveProc] only hides him at the far side - he gets no new appointment, so
-             * Gordon crosses at most once in a wave. */
-            if (FIX_WHOLE(e->x) <= 0) e->alive = false;
+             * Gordon crosses at most once in a wave unless the Enhancements switch is on. */
+            if (FIX_WHOLE(e->x) <= 0) {
+                e->alive = false;
+                if (enh[ENH_MORE_GORDON]) gecko_at = ticks + rnd(300) + 150;
+            }
             break;
         }
 
@@ -1576,8 +1608,8 @@ static void house_keeping(void)
     for (int i = 0; i < MAX_ENT; i++)
         if (ent[i].alive && ent[i].type == E_SCORP) { scorp_out = true; break; }
     if (!scorp_out) {
-        if (ticks > scorp_at - 30 && !scorp_warned) { scorp_warned = true; sfx(SND_SCORP_APPEARS); }
-        if (ticks > scorp_at) { scorp_warned = false; create_scorpion(); }
+        if (gticks > scorp_at - 30 && !scorp_warned) { scorp_warned = true; sfx(SND_SCORP_APPEARS); }
+        if (gticks > scorp_at) { scorp_warned = false; create_scorpion(); }
     }
 
     /* [FleaDescentCheck]: a flea when the player's zone is running out of mushrooms. All four
@@ -1923,6 +1955,7 @@ static void move_player(void)
 static void idle_frame(void)
 {
     ticks += TICKS_PER_FRAME;
+    gticks += TICKS_PER_FRAME;
     player_anim++; pede_anim++;
     pump();
     if (!player_dead) move_player();
@@ -2068,6 +2101,7 @@ static bool game_loop(void)
         }
 
         ticks += TICKS_PER_FRAME;
+        gticks += TICKS_PER_FRAME;
         player_anim++; pede_anim++;
         music_pump();
 
@@ -2378,6 +2412,7 @@ void run_attract(void)
 
 void new_game(void)                          /* [NewGame] */
 {
+    gticks = 0;
     scorp_at = 0;                            /* DAT_1001dacc: Larry is due from the first frame */
     scorp_warned = false;
     quit_to_title = false;
