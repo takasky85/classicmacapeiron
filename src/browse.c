@@ -75,18 +75,30 @@ static void read_dir(const char *path)
 /* Where to start looking. Android keeps the user's downloads in a couple of well-known places,
  * and a sideloaded build reaches them with ordinary file calls as long as the manifest asked for
  * storage; the rest are for a desktop running this as a fallback. */
-static const char *first_guess(void)
+static const char *candidates[] = {
+    "/sdcard/Download", "/storage/emulated/0/Download", "/sdcard", "/storage/emulated/0",
+    "/storage", NULL /* $HOME, filled in below */, "/"
+};
+#define N_CANDIDATES (int)(sizeof candidates / sizeof candidates[0])
+
+/* The best place we can open at this moment, and how good it is - lower is better, and
+ * N_CANDIDATES means nothing on the list would open.
+ *
+ * "At this moment" is the point of returning the rank. The storage permission is asked for while
+ * the game is starting and nothing waits on it, so the first call here often runs before it has
+ * been granted: every candidate under /sdcard fails to open and the browser would otherwise sit
+ * at "/" showing the root of an Android system, with the player's downloads unreachable and no
+ * hint as to why. Asking again as the browser runs costs an opendir and fixes that by itself the
+ * moment the permission lands. */
+static const char *best_start(int *rank)
 {
-    static const char *tries[] = {
-        "/sdcard/Download", "/storage/emulated/0/Download", "/sdcard", "/storage/emulated/0",
-        "/storage", NULL, "/"
-    };
-    tries[5] = getenv("HOME");
-    for (unsigned i = 0; i < sizeof tries / sizeof tries[0]; i++) {
-        if (!tries[i]) continue;
-        DIR *d = opendir(tries[i]);
-        if (d) { closedir(d); return tries[i]; }
+    candidates[5] = getenv("HOME");
+    for (int i = 0; i < N_CANDIDATES; i++) {
+        if (!candidates[i]) continue;
+        DIR *d = opendir(candidates[i]);
+        if (d) { closedir(d); if (rank) *rank = i; return candidates[i]; }
     }
+    if (rank) *rank = N_CANDIDATES;
     return "/";
 }
 
@@ -169,15 +181,36 @@ static void draw(const char *path, int sel, int top, bool here_is_it)
 bool assets_browse(char *out, size_t n)
 {
     char path[1200];
-    snprintf(path, sizeof path, "%s", first_guess());
+    int rank;
+    snprintf(path, sizeof path, "%s", best_start(&rank));
     read_dir(path);
     browse_palette();
 
     int sel = 0, top = 0;
     bool held = false;                  /* so one push of the stick moves one row */
     int repeat = 0;
+    bool moved = false;                 /* has the player navigated anywhere themselves yet? */
+    int recheck = 0;
 
     for (;;) {
+        /* Until the player goes somewhere of their own accord, keep an eye out for a better
+         * starting point than the one we could reach when we opened - which is how the storage
+         * permission being granted a second or two in gets noticed. Twice a second is plenty.
+         * Once they have moved, this stops: being yanked out of the folder you are looking at
+         * would be worse than starting in the wrong one. */
+        if (!moved && rank > 0 && ++recheck >= 30) {
+            recheck = 0;
+            int r2;
+            const char *p2 = best_start(&r2);
+            if (r2 < rank) {
+                rank = r2;
+                snprintf(path, sizeof path, "%s", p2);
+                read_dir(path);
+                sel = top = 0;
+                SDL_Log("apeiron: storage opened up - starting at '%s'", path);
+            }
+        }
+
         bool here = is_assets(path);
         draw(path, sel, top, here);
 
@@ -237,6 +270,7 @@ bool assets_browse(char *out, size_t n)
             return true;
         }
         if (open_it && sel < n_entries) {
+            moved = true;
             if (!strcmp(entries[sel].name, "..")) {
                 parent_of(path);
             } else {
@@ -254,6 +288,7 @@ bool assets_browse(char *out, size_t n)
             wait_ms(120);                       /* so one press is not read as several */
         }
         if (up) {
+            moved = true;
             parent_of(path);
             read_dir(path);
             sel = top = 0;
