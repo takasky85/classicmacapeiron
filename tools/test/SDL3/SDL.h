@@ -87,6 +87,9 @@ bool SDL_RaiseWindow(SDL_Window *);
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED "SDL_WINDOW_ACTIVATE_WHEN_RAISED"
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN "SDL_WINDOW_ACTIVATE_WHEN_SHOWN"
 #define SDL_HINT_FORCE_RAISEWINDOW "SDL_FORCE_RAISEWINDOW"
+/* Set under __ANDROID__, which the libretro core's Android targets define while still compiling
+ * against this stub rather than real SDL headers - so it has to be spelled out here too. */
+#define SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY "SDL_ANDROID_ALLOW_RECREATE_ACTIVITY"
 typedef enum { SDL_FLASH_BRIEFLY = 1 } SDL_FlashOperation;
 bool SDL_SetHint(const char *, const char *);
 bool SDL_ShowWindow(SDL_Window *);
