@@ -1,6 +1,10 @@
+// Android Gradle Plugin 8.4.2, which wants Gradle 8.6 or so. The runners ship Gradle 9,
+// which AGP 8.x refuses with a confusing error about DependencyHandler.module - so both
+// workflows ask gradle/actions/setup-gradle for a matching Gradle rather than using the
+// runner's. Change one of these two and you change the other.
 buildscript {
     repositories { google(); mavenCentral() }
-    dependencies { classpath 'com.android.tools.build:gradle:8.1.4' }
+    dependencies { classpath 'com.android.tools.build:gradle:8.4.2' }
 }
 allprojects {
     repositories { google(); mavenCentral() }

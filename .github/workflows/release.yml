@@ -286,6 +286,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      # Not the runner's Gradle: it is version 9, and the Android plugin this project uses is
+      # an 8.x, which fails against it with a misleading error about DependencyHandler.module.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: fetch SDL for the Android port
         run: ./android/fetch-sdl.sh
