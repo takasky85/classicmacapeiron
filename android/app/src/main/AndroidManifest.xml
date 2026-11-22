@@ -17,8 +17,12 @@
 
     <!-- The artwork is not in the APK: the game reads it from a folder, usually in Downloads.
          READ is asked for at run time, only if the artwork was not found without it.
-         Nothing is written outside the app's own folders, so there is no WRITE permission. -->
+         The game writes only to its own folders. The one WRITE is for the startup log on Android 9
+         and older; from Android 10 the log goes into Downloads through MediaStore with no
+         permission at all. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <!-- Declared and never asked for from inside the game. It exists so that, if a TV will not
          let the Download folder be read any other way, "All files access" can be granted from a
          computer with:  adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow  -->

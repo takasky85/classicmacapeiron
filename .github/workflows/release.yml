@@ -211,6 +211,12 @@ jobs:
 
                    adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow
 
+          If the game closes as soon as it opens, or does anything else unexpected: every start
+          writes a text file called apeiron-log-<date>-<time>.txt into the Download folder. It
+          lists the device, whether the game's libraries load, which input devices Android sees,
+          and the game's own startup messages - and the file from the launch AFTER a crash holds
+          the end of the crashed run. That file is what to send along with a bug report.
+
           Controls: a mouse works, including for steering, if you have one plugged in. Otherwise
           the d-pad or a stick steers and the A button fires. In the menus the stick moves a
           pointer and A clicks. The diagnostics screen counts mouse, touch, key and gamepad input
