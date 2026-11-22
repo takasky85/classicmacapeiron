@@ -498,10 +498,16 @@ def main(game, out, fonts):
     ny = {14: 1067, 18: 32121, 24: 28514}
     for size, nid in ny.items():
         print(f'font_newyork{size}', nfnt_to_font(app[('NFNT', nid)], f'{out}/font_newyork{size}'))
-    gen = res(fonts['Geneva'])
-    chi = res(fonts['Chicago'])
-    print('font_geneva9 ', nfnt_to_font(gen[('NFNT', 3130)], f'{out}/font_geneva9'))
-    print('font_chicago12', nfnt_to_font(chi[('NFNT', 1025)], f'{out}/font_chicago12'))
+    if 'Geneva' in fonts:
+        gen = res(fonts['Geneva'])
+        print('font_geneva9 ', nfnt_to_font(gen[('NFNT', 3130)], f'{out}/font_geneva9'))
+    else:
+        print('font_geneva9  (stand-in: New York 14)', nfnt_to_font(app[('NFNT', ny[14])], f'{out}/font_geneva9'))
+    if 'Chicago' in fonts:
+        chi = res(fonts['Chicago'])
+        print('font_chicago12', nfnt_to_font(chi[('NFNT', 1025)], f'{out}/font_chicago12'))
+    else:
+        print('font_chicago12 (stand-in: New York 14)', nfnt_to_font(app[('NFNT', ny[14])], f'{out}/font_chicago12'))
 
     # the in-game score panel, the title screen's buttons and the three instruction pages
     print('scorematt.bmp   ', indexed_bmp(titles[('PICT', 401)], game_clut, f'{out}/scorematt.bmp'))
@@ -724,17 +730,15 @@ def find_fonts(search_dirs, game_dir, keep):
                 break
     missing = [n for n in FONT_NAMES if n not in found]
     if missing:
-        sys.exit(
-            "\nCannot find the %s font%s the game needs for its dialogs.\n"
-            "\n"
-            "They are Apple's, so they are not in this repository, and they are not in the game's\n"
-            "zip. Put %s in the same folder as the game's zip and run this again. (Each is the\n"
-            "zip you get from a Mac, holding .rsrc/<font name>. A folder called source_fonts next\n"
-            "to the tools folder, with Geneva.rsrc and Chicago.rsrc in it, works too.)"
-            % (' and '.join(missing), 's' if len(missing) > 1 else '',
-               ' and '.join(n + '.zip' for n in missing)))
+        print(
+            "\n*** %s not found - using the game's own New York font in its place for now. ***\n"
+            "The game works, but its menus and the high-score box will look a little different.\n"
+            "For the real look, put %s (from a Mac; each holds .rsrc/<font name>) in the same\n"
+            "folder as the game's zip, or in Downloads, and run this again.\n"
+            % (' and '.join(missing), ' and '.join(n + '.zip' for n in missing)))
     for n in FONT_NAMES:
-        print('font file for %-8s %s' % (n, found[n]))
+        if n in found:
+            print('font file for %-8s %s' % (n, found[n]))
     return found
 
 
@@ -747,20 +751,73 @@ def default_out_for(src):
     return os.path.join(parent, DEFAULT_OUT)
 
 
-if __name__ == '__main__':
-    if len(sys.argv) not in (2, 3):
-        sys.exit('usage: extract_assets.py <the game\'s .zip | its folder | a MacBinary file> [out_dir]\n'
+def _home_dirs():
+    h = os.path.expanduser('~')
+    return [os.path.join(h, d) for d in ('Downloads', 'Desktop', 'Documents')] + [h]
+
+
+def _find_game_zip():
+    """No argument given: look for the game's zip where people leave downloads."""
+    for d in [os.getcwd(), os.path.join(HERE, '..'), HERE] + _home_dirs():
+        try:
+            names = sorted(f for f in os.listdir(d)
+                           if f.lower().endswith('.zip') and f.lower().startswith('apeiron')
+                           and 'font' not in f.lower())
+        except OSError:
+            continue
+        for f in names:
+            return os.path.join(d, f)
+    return None
+
+
+def _writable(folder):
+    """Can a folder be made and written to there?"""
+    try:
+        os.makedirs(folder, exist_ok=True)
+        probe = os.path.join(folder, '.write-test')
+        with open(probe, 'w') as fh:
+            fh.write('x')
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def _pause():
+    """Started by double-click or drag-and-drop on Windows the window closes the moment the script
+    ends; wait so the message can be read."""
+    if os.name == 'nt' and sys.stdin and sys.stdin.isatty() and len(sys.argv) < 3:
+        try:
+            input('\nPress Enter to close this window...')
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+
+def run():
+    if len(sys.argv) > 3:
+        sys.exit('usage: extract_assets.py [the game\'s .zip | its folder | a MacBinary file] [out_dir]\n'
                  '       out_dir defaults to "%s" beside the input' % DEFAULT_OUT)
-    src = sys.argv[1]
+    src = sys.argv[1] if len(sys.argv) > 1 else _find_game_zip()
+    if not src:
+        sys.exit("Give the game's zip as the argument (or drop it on this script), or leave\n"
+                 "Apeiron*.zip in Downloads or in the folder you run this from.")
+    src = src.strip('"')
     if not os.path.exists(src):
         sys.exit("'%s' does not exist" % src)
+    print('game: %s' % os.path.abspath(src))
     out = sys.argv[2] if len(sys.argv) == 3 else default_out_for(src)
+    if len(sys.argv) < 3 and not _writable(out):
+        alt = os.path.join(os.path.expanduser('~'), 'Downloads', DEFAULT_OUT)
+        if not _writable(alt):
+            alt = os.path.join(os.path.expanduser('~'), DEFAULT_OUT)
+        print("cannot write beside the input, using %s instead" % alt)
+        out = alt
     game, temps = prepare(src)
     try:
         here = os.path.dirname(os.path.abspath(src.rstrip('/\\')))
         keep = tempfile.mkdtemp(prefix='apeiron-fonts-')
         temps.append(keep)
-        fonts = find_fonts([here, os.path.join(HERE, '..'), os.getcwd()], game, keep)
+        fonts = find_fonts([here, os.path.join(HERE, '..'), os.getcwd()] + _home_dirs(), game, keep)
         main(game, out, fonts)
     except PermissionError as e:
         sys.exit("\nPermission denied: %s\n"
@@ -771,3 +828,11 @@ if __name__ == '__main__':
         for t in temps:
             _rmtree(t)
     print('\nDone: %s' % os.path.abspath(out))
+    print('Put that folder in Download on the TV, or beside apeiron.exe on Windows.')
+
+
+if __name__ == '__main__':
+    try:
+        run()
+    finally:
+        _pause()
