@@ -21,12 +21,9 @@
  */
 #include "apeiron.h"
 
-#include <dirent.h>
-#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #define NOTES     24
 #define NOTE_LEN  110
@@ -98,21 +95,12 @@ static void probe(const char *label, const char *path)
 {
     if (!path || !path[0]) { row("  %-30s (not set)", label); return; }
 
-    DIR *d = opendir(path);
-    if (!d) {
-        const char *why = strerror(errno);
-        if (errno == EACCES) why = "permission denied - storage not granted yet";
-        else if (errno == ENOENT) why = "no such folder on this machine";
-        row("  %-30s %s", label, why);
-        return;
-    }
+    DirScan s;
+    if (!dir_open(&s, path)) { row("  %-30s %s", label, dir_why(s.err)); return; }
     int files = 0;
-    struct dirent *e;
-    while ((e = readdir(d))) {
-        if (e->d_name[0] == '.') continue;
-        files++;
-    }
-    closedir(d);
+    while (dir_next(&s))
+        if (s.name[0] != '.') files++;
+    dir_close(&s);
 
     char probe_path[1200];
     snprintf(probe_path, sizeof probe_path, "%s/spr/shooter.bmp", path);

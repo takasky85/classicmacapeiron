@@ -129,6 +129,15 @@ void mini_text(int x, int y, const char *s, uint8_t ink);
 void mini_text2x(int x, int y, const char *s, uint8_t ink);
 void mini_char(int x, int y, char c, uint8_t ink);
 int  mini_text_width(const char *s);
+/* Walking a folder without caring which platform this is - see dirs.c. MSVC has no <dirent.h>
+ * and MinGW's struct dirent has no d_type, so neither is assumed here. */
+typedef struct { void *h; int err; bool pending; char name[260]; } DirScan;
+bool dir_open(DirScan *s, const char *path);     /* false, and s->err says why, on failure */
+bool dir_next(DirScan *s);                       /* fills s->name; false at the end */
+void dir_close(DirScan *s);
+bool dir_is_dir(const char *path);
+const char *dir_why(int err);
+
 bool assets_browse(char *out, size_t n);
 /* The places the game looks for its artwork, so the diagnostics screen can report on each. */
 int  assets_candidate_count(void);

@@ -13,11 +13,9 @@
  */
 #include "apeiron.h"
 
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #define MAX_ENTRIES 512
 #define ROWS        18
@@ -25,7 +23,7 @@
 #define LIST_Y      96
 #define LIST_X      40
 
-typedef struct { char name[256]; bool is_dir; } Entry;
+typedef struct { char name[260]; bool is_dir; } Entry;   /* matches DirScan.name */
 
 static Entry entries[MAX_ENTRIES];
 static int   n_entries;
@@ -51,29 +49,19 @@ static bool is_assets(const char *dir)
 static void read_dir(const char *path)
 {
     n_entries = 0;
-    DIR *d = opendir(path);
-    if (!d) return;
-    struct dirent *e;
-    while ((e = readdir(d)) && n_entries < MAX_ENTRIES) {
-        if (!strcmp(e->d_name, ".")) continue;
-        if (e->d_name[0] == '.' && strcmp(e->d_name, "..")) continue;   /* skip hidden, keep .. */
+    DirScan s;
+    if (!dir_open(&s, path)) return;
+    while (dir_next(&s) && n_entries < MAX_ENTRIES) {
+        if (!strcmp(s.name, ".")) continue;
+        if (s.name[0] == '.' && strcmp(s.name, "..")) continue;   /* skip hidden, keep .. */
         char full[1400];
-        snprintf(full, sizeof full, "%s/%s", path, e->d_name);
-        struct stat st;
-        bool dir = false;
-        if (!stat(full, &st)) dir = S_ISDIR(st.st_mode);
-#ifdef DT_DIR
-        /* stat refused - no permission to stat it, a broken symlink - but the directory entry
-         * itself may still say what it is. Not everywhere has this: MinGW's struct dirent has no
-         * d_type at all, which is why it is asked for rather than assumed. */
-        else if (e->d_type == DT_DIR) dir = true;
-#endif
-        if (!dir) continue;                      /* only folders are worth showing */
-        snprintf(entries[n_entries].name, sizeof entries[0].name, "%s", e->d_name);
+        snprintf(full, sizeof full, "%s/%s", path, s.name);
+        if (!dir_is_dir(full)) continue;         /* only folders are worth showing */
+        snprintf(entries[n_entries].name, sizeof entries[0].name, "%s", s.name);
         entries[n_entries].is_dir = true;
         n_entries++;
     }
-    closedir(d);
+    dir_close(&s);
     qsort(entries, (size_t)n_entries, sizeof entries[0], cmp_entry);
 }
 
@@ -108,8 +96,8 @@ static const char *best_start(int *rank)
     candidates[5] = getenv("HOME");
     for (int i = 0; i < N_CANDIDATES; i++) {
         if (!candidates[i]) continue;
-        DIR *d = opendir(candidates[i]);
-        if (d) { closedir(d); if (rank) *rank = i; return candidates[i]; }
+        DirScan sc;
+        if (dir_open(&sc, candidates[i])) { dir_close(&sc); if (rank) *rank = i; return candidates[i]; }
     }
     if (rank) *rank = N_CANDIDATES;
     return "/";
