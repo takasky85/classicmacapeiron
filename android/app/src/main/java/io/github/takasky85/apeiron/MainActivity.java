@@ -1,15 +1,21 @@
 package io.github.takasky85.apeiron;
 
 import android.annotation.TargetApi;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.View;
 
 import org.libsdl.app.SDLActivity;
 
 /**
- * The game's one workaround for SDL 3.4.20 on Android.
+ * Two small things for the Android build.
+ *
+ * 1. A workaround for SDL 3.4.20.
  *
  * While the pointer is captured - which is how the game steers with a mouse - Android reports the
  * buttons as ACTION_BUTTON_PRESS and ACTION_BUTTON_RELEASE. SDL's Java hands those on unchanged,
@@ -20,6 +26,33 @@ import org.libsdl.app.SDLActivity;
  * and passes them on. Everything else goes through to SDL untouched.
  */
 public class MainActivity extends SDLActivity {
+
+    /**
+     * "All files access" (Android 11 and later): the switch that lets the game read the artwork
+     * out of the Download folder, the same permission ScummVM asks for. Called from the game's
+     * native code through JNI, which is why these are plain public methods.
+     */
+    public boolean hasAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
+        return true;       // before Android 11 the ordinary storage permission does the job
+    }
+
+    /** Opens this app's "All files access" page in Settings. False if the device has none. */
+    public boolean requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT < 30) return false;
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                     Uri.parse("package:" + getPackageName())));
+            return true;
+        } catch (Throwable t) {
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                return true;
+            } catch (Throwable t2) {
+                return false;
+            }
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

@@ -181,5 +181,7 @@ bool SDL_RequestAndroidPermission(const char *p, SDL_RequestAndroidPermissionCal
 const char *SDL_GetAndroidInternalStoragePath(void){ return getenv("STUB_INTERNAL"); }
 const char *SDL_GetAndroidExternalStoragePath(void){ return getenv("STUB_EXTERNAL"); }
 Uint32 SDL_GetAndroidExternalStorageState(void){ return 3; }
+void *SDL_GetAndroidJNIEnv(void){ return NULL; }
+void *SDL_GetAndroidActivity(void){ return NULL; }
 int SDL_GetAndroidSDKVersion(void){ const char *v=getenv("STUB_SDK"); return v?atoi(v):34; }
 float SDL_GetWindowPixelDensity(SDL_Window *w){ (void)w; return 1.0f; }

@@ -6,8 +6,10 @@
  * READ_EXTERNAL_STORAGE, and an app has to ask for that while it is running - listing it in the
  * manifest is not enough from Android 6 onwards.
  *
- * Only that one permission is asked for, and only when the artwork was not already found without
- * it. The app's own folder under Android/data needs none, so a player who would rather not grant
+ * That is the permission for Android 6 to 10. From Android 11 the system no longer lets an app read
+ * other people's files in a shared folder on the strength of that one, and the answer is "All files
+ * access": a switch in Settings that MainActivity takes the player to (the same thing ScummVM does).
+ * It is asked for only when the artwork was not already found without it. The app's own folder under Android/data needs none, so a player who would rather not grant
  * anything can put the artwork there instead (the diagnostics screen says where it is).
  *
  * What the grant actually buys depends on the Android version, and that is the part that cannot be
@@ -19,6 +21,8 @@
 #include "apeiron.h"
 
 #ifdef __ANDROID__
+
+#include <jni.h>
 
 static SDL_AtomicInt answer;          /* 0 not answered yet, 1 granted, 2 refused */
 static const char *outcome = "not asked";
@@ -55,9 +59,93 @@ static void wait_screen(int secs_left)
     present();
 }
 
+/* A yes/no method on MainActivity, called through JNI. */
+static bool java_bool(const char *method)
+{
+    JNIEnv *env = SDL_GetAndroidJNIEnv();
+    jobject act = SDL_GetAndroidActivity();
+    bool r = false;
+    if (env && act) {
+        jclass cls = (*env)->GetObjectClass(env, act);
+        jmethodID mid = cls ? (*env)->GetMethodID(env, cls, method, "()Z") : NULL;
+        if (mid) r = (*env)->CallBooleanMethod(env, act, mid) != JNI_FALSE;
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        if (cls) (*env)->DeleteLocalRef(env, cls);
+    }
+    if (env && act) (*env)->DeleteLocalRef(env, act);
+    return r;
+}
+
+static void wait_screen_all_files(int secs_left)
+{
+    Rgb c[256];
+    memset(c, 0, sizeof c);
+    c[W_BG]    = (Rgb){ 0x0800, 0x0C00, 0x1800 };
+    c[W_INK]   = (Rgb){ 0xE000, 0xE000, 0xE000 };
+    c[W_TITLE] = (Rgb){ 0x60FF, 0xD000, 0x80FF };
+    c[W_DIM]   = (Rgb){ 0x7000, 0x7800, 0x8000 };
+    set_monitor_clut(c, true);
+
+    fill_rect(0, 0, SCREEN_W, SCREEN_H, W_BG);
+    mini_text2x(16, 16, "Apeiron needs to read your files", W_TITLE);
+    mini_text(16, 60,  "The artwork was not found yet. To read it from the Download", W_INK);
+    mini_text(16, 72,  "folder, Android wants you to switch on \"All files access\".", W_INK);
+    mini_text(16, 100, "Settings should be open: turn it ON for Apeiron, then go Back.", W_INK);
+    mini_text(16, 128, "Nothing is changed or sent anywhere; the game only reads", W_DIM);
+    mini_text(16, 140, "the folder you put the artwork in.", W_DIM);
+    char line[80];
+    snprintf(line, sizeof line, "Any key, button or click carries on without it (%d)", secs_left);
+    mini_text(16, SCREEN_H - 14, line, W_TITLE);
+    set_entries();
+    present();
+}
+
+/* Android 11 and later: "All files access", granted on a Settings page. */
+static bool ask_all_files(int sdk)
+{
+    if (java_bool("hasAllFilesAccess")) {
+        outcome = "all files access: on";
+        diag_note("storage: all files access already on (Android %d)", sdk);
+        return true;
+    }
+    if (!java_bool("requestAllFilesAccess")) {
+        outcome = "no settings page";
+        diag_note("storage: could not open the all-files-access settings page");
+        return false;
+    }
+    bool nobody = plat_headless();
+    Uint64 start = SDL_GetTicks();
+    const Uint64 limit = 120000;
+    flush_clicks();
+    for (;;) {
+        if (java_bool("hasAllFilesAccess")) {
+            outcome = "all files access: on";
+            diag_note("storage: all files access granted");
+            flush_clicks();
+            return true;
+        }
+        if (nobody) break;
+        Uint64 gone = SDL_GetTicks() - start;
+        if (gone > limit) { outcome = "no answer"; diag_note("storage: no answer on the settings page"); return false; }
+        wait_screen_all_files((int)((limit - gone) / 1000));
+        if (button() || pad_fire() || pad_start()) {
+            if (!java_bool("hasAllFilesAccess")) {
+                outcome = "skipped";
+                diag_note("storage: carried on without all files access");
+                return false;
+            }
+        }
+        pump();
+        wait_ms(100);
+    }
+    outcome = "no answer";
+    return false;
+}
+
 bool droid_ask_storage(void)
 {
     int sdk = SDL_GetAndroidSDKVersion();
+    if (sdk >= 30) return ask_all_files(sdk);
     if (sdk < 23) {                    /* before runtime permissions: the manifest already did it */
         outcome = "granted at install";
         diag_note("storage: Android %d - permission comes with the install", sdk);

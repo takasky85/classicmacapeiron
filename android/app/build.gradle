@@ -18,14 +18,13 @@ android {
     defaultConfig {
         applicationId 'io.github.takasky85.apeiron'
         minSdk 21
-        // Deliberately 28. From 29 onwards Android applies scoped storage, and this game finds
-        // its artwork by being pointed at a folder and then opening files in it with fopen -
-        // which scoped storage does not allow and the Storage Access Framework cannot provide,
-        // because what SAF hands back is a content URI, not a path. Targeting 28 keeps the
-        // legacy behaviour, where READ_EXTERNAL_STORAGE means what it says. Sideloaded builds
-        // have no store policy to answer to, and 28 is still well above the floor that Android
-        // 14 and 15 refuse to install below.
-        targetSdk 28
+        // 36, as ScummVM's build has. It was 28, to keep the old unrestricted storage rules, and
+        // Google Play Protect answered with "built for an older version of Android" on every
+        // install. From 30 on the way to read another folder's files by path is "All files
+        // access" - a switch in Settings, which the game sends you to when the artwork is not
+        // already somewhere it can read. compileSdk stays at 34: a target higher than the
+        // compile level is allowed, and it is the target that the system looks at.
+        targetSdk 36
         versionCode 1
         versionName '1.0.3'
         externalNativeBuild {

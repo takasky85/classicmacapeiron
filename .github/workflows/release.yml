@@ -198,23 +198,18 @@ jobs:
               python3 tools/extract_assets.py <the installed Apeiron folder> assets
 
           Put that "assets" folder in the device's Download folder. The first time the game
-          starts it asks Android for permission to read files - choose Allow - and then looks in
-          Download by itself. If it is somewhere else, the game shows a folder browser (remote,
-          gamepad, mouse or touch) so you can go and find it; it remembers the choice.
+          starts it opens a Settings page for "All files access" - turn it on for Apeiron and go
+          Back - and then looks in Download by itself. (Android 6 to 10 asks a plain permission
+          question instead.) If the artwork is somewhere else, the game shows a folder browser
+          (remote, gamepad, mouse or touch) so you can go and find it; it remembers the choice.
 
-          If Android will not let the game read the Download folder - on Android 11 and later
-          the system decides which files in a shared folder an app may see - there are two ways
-          round it, both from a computer with adb:
+          If your device has no such Settings page, grant it from a computer with adb:
 
-            1. Put the folder where the game needs no permission at all. The game's diagnostics
-               screen (left or right in the folder browser) prints the exact path; it is
-               /sdcard/Android/data/io.github.takasky85.apeiron/files/assets, so:
+              adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow
 
-                   adb push assets /sdcard/Android/data/io.github.takasky85.apeiron/files/assets
+          or put the folder where no permission is needed at all:
 
-            2. Or give it "All files access":
-
-                   adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow
+              adb push assets /sdcard/Android/data/io.github.takasky85.apeiron/files/assets
 
           If the game cannot find its artwork, the folder browser's diagnostics screen (press left
           or right there) lists which folders it can read and why not, and what input it has heard.
