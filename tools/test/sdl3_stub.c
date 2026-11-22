@@ -67,7 +67,9 @@ static void script_update(void){
     if(getenv("SPAWN")) keys[atoi(getenv("SPAWN"))] = (((now-26000)/700)%2==0);
   }
 }
+static SDL_RequestAndroidPermissionCallback perm_cb; static void *perm_ud; static Uint64 perm_at; static int perm_pending;
 bool SDL_PollEvent(SDL_Event*e){
+  if(perm_pending && now>=perm_at){ perm_pending=0; perm_cb(perm_ud,"android.permission.READ_EXTERNAL_STORAGE",true); }
   script_update();
   if(script){
     if(clicks_done==0 && now>800){ clicks_done=1; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.x=320; e->button.y=240; printf("[%llu ms] click (skip intro)\n",(unsigned long long)now); return true; }
@@ -165,5 +167,19 @@ bool SDL_ShowSimpleMessageBox(Uint32 f, const char *t, const char *m, SDL_Window
 { (void)f;(void)w; printf("MSGBOX: %s - %s\n", t?t:"", m?m:""); return true; }
 char *SDL_GetPrefPath(const char *o, const char *a){ (void)o;(void)a; char *p=malloc(8); if(p) snprintf(p,8,"./"); return p; }
 const char *SDL_GetBasePath(void){ return "./"; }
-const char *SDL_GetCurrentVideoDriver(void){ return "dummy"; }
+const char *SDL_GetCurrentVideoDriver(void){ const char *v=getenv("STUB_VIDEO"); return v?v:"dummy"; }
+
+/* Android: STUB_PERM = grant (default) | deny | later (answers after 3 s) | never. */
+bool SDL_RequestAndroidPermission(const char *p, SDL_RequestAndroidPermissionCallback cb, void *ud){
+  const char *m=getenv("STUB_PERM"); if(!m) m="grant";
+  printf("[%llu ms] permission requested: %s (%s)\n",(unsigned long long)now,p,m);
+  if(!strcmp(m,"grant")) { cb(ud,p,true); return true; }
+  if(!strcmp(m,"deny")) { cb(ud,p,false); return true; }
+  if(!strcmp(m,"later")) { perm_cb=cb; perm_ud=ud; perm_at=now+3000; perm_pending=1; return true; }
+  return true;
+}
+const char *SDL_GetAndroidInternalStoragePath(void){ return getenv("STUB_INTERNAL"); }
+const char *SDL_GetAndroidExternalStoragePath(void){ return getenv("STUB_EXTERNAL"); }
+Uint32 SDL_GetAndroidExternalStorageState(void){ return 3; }
+int SDL_GetAndroidSDKVersion(void){ const char *v=getenv("STUB_SDK"); return v?atoi(v):34; }
 float SDL_GetWindowPixelDensity(SDL_Window *w){ (void)w; return 1.0f; }

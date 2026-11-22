@@ -27,6 +27,7 @@ typedef struct { char name[260]; bool is_dir; } Entry;   /* matches DirScan.name
 
 static Entry entries[MAX_ENTRIES];
 static int   n_entries;
+static int   read_err;               /* why the last read_dir could not open its folder; 0 if it did */
 
 static int cmp_entry(const void *a, const void *b)
 {
@@ -49,8 +50,9 @@ static bool is_assets(const char *dir)
 static void read_dir(const char *path)
 {
     n_entries = 0;
+    read_err = 0;
     DirScan s;
-    if (!dir_open(&s, path)) return;
+    if (!dir_open(&s, path)) { read_err = s.err ? s.err : -1; return; }
     while (dir_next(&s) && n_entries < MAX_ENTRIES) {
         if (!strcmp(s.name, ".")) continue;
         if (s.name[0] == '.' && strcmp(s.name, "..")) continue;   /* skip hidden, keep .. */
@@ -161,8 +163,16 @@ static void draw(const char *path, int sel, int top, bool here_is_it)
                  strcmp(entries[idx].name, "..") ? "/" : "");
         mini_text(LIST_X, y, line, on ? C_SELINK : C_INK);
     }
-    if (!n_entries)
-        mini_text(LIST_X, LIST_Y, "(nothing in here)", C_DIM);
+    if (!n_entries) {
+        if (read_err) {
+            char why[120];
+            snprintf(why, sizeof why, "(cannot open this folder: %s)", dir_why(read_err));
+            mini_text(LIST_X, LIST_Y, why, C_DIM);
+            mini_text(LIST_X, LIST_Y + 14, "Press left or right to see what the game is allowed to read.", C_DIM);
+        } else {
+            mini_text(LIST_X, LIST_Y, "(no folders in here)", C_DIM);
+        }
+    }
 
     if (here_is_it) {
         fill_rect(LIST_X - 6, SCREEN_H - 54, SCREEN_W - 2 * LIST_X + 12, 14, C_SEL);

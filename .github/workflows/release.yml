@@ -1,10 +1,13 @@
 name: release
 
-# Builds the game for each desktop platform and attaches the results to a GitHub Release.
+# Builds the game for the two platforms that are shipped - Windows 11 on x86-64 and 32-bit ARM
+# Android (Google TV) - and attaches the results to a GitHub Release. The Linux, macOS and libretro
+# builds are gone from CI; the source for them is still in the repository.
 #
-# Each build links SDL3 statically, so every artifact is a single executable with nothing beside it
-# - no SDL3.dll, no MinGW runtime, no libiconv. SDL is zlib-licensed, which allows that as long as
-# its notice travels along, so SDL's LICENSE.txt goes in each archive.
+# The Windows build links SDL3 statically, so it is a single executable with nothing beside it - no
+# SDL3.dll, no MinGW runtime, no libiconv. SDL is zlib-licensed, which allows that as long as its
+# notice travels along, so SDL's LICENSE.txt goes in the archive. The Android build uses SDL's own
+# prebuilt AAR rather than compiling SDL.
 #
 # No assets. assets/ holds Ambrosia Software's artwork, fonts and sounds, and it is not in this
 # repository and not in these builds: you make it from your own copy of Apeiron with
@@ -13,7 +16,7 @@ name: release
 #
 # Trigger: any tag, however it is named - pushed from a terminal, or created by making a release in
 # the browser. Or run it by hand from the Actions tab: with the tag box empty it builds and uploads
-# the three archives as run artifacts and touches no release; with a tag name it also attaches them
+# the archives as run artifacts and touches no release; with a tag name it also attaches them
 # to that tag's release, creating it if it does not exist.
 
 on:
@@ -47,52 +50,12 @@ jobs:
           echo "stamp=$(TZ=America/Los_Angeles date +%y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           echo "name=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
-  build:
-    name: ${{ matrix.name }}
+  windows:
+    name: windows-x86_64
     needs: stamp
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: windows-x86_64
-            os: windows-latest
-            # The MSVC runtime is linked statically too, so the exe needs no redistributable.
-            cmake_extra: >-
-              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-              -DCMAKE_POLICY_DEFAULT_CMP0091=NEW
-            binary: apeiron.exe
-          - name: linux-x86_64
-            os: ubuntu-latest
-            cmake_extra: ''
-            binary: apeiron
-          - name: macos-universal
-            os: macos-latest
-            # The quotes matter. CMAKE_OSX_ARCHITECTURES takes a semicolon-separated list, and a
-            # bare semicolon in a run: line is a shell command separator - the configure step then
-            # ran as two commands, the second being `x86_64`, which exited 127 with "command not
-            # found" after cmake had already configured for arm64 alone.
-            cmake_extra: '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"'
-            binary: Apeiron.app
-
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      # SDL3 builds its video and audio backends against the system's development headers. Without
-      # these, SDL still configures but comes out with no working video driver on Linux - and from
-      # the 3.4 series a dependency it looks for and cannot find fails the configure outright, so
-      # this list and the one in build.yml have to stay the same list.
-      - name: install SDL3's Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
-            libxi-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
-            libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev \
-            libibus-1.0-dev libudev-dev libwayland-dev wayland-protocols \
-            libdecor-0-dev libxtst-dev libpipewire-0.3-dev libsamplerate0-dev
 
       # SDL3's source is fetched by CMake, so caching it keeps a release build to a couple of
       # minutes instead of re-cloning and rebuilding SDL every time.
@@ -100,41 +63,33 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: sdl3-${{ matrix.name }}-${{ hashFiles('CMakeLists.txt') }}
+          key: sdl3-windows-x86_64-${{ hashFiles('CMakeLists.txt') }}
 
       - name: configure
+        # The MSVC runtime is linked statically too, so the exe needs no redistributable.
         run: >-
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DAPEIRON_STATIC_SDL=ON
           -DAPEIRON_BUILD_STAMP=${{ needs.stamp.outputs.stamp }}
           -DAPEIRON_BUILD_NAME=${{ needs.stamp.outputs.name }}
-          ${{ matrix.cmake_extra }}
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          -DCMAKE_POLICY_DEFAULT_CMP0091=NEW
 
       - name: build
         run: cmake --build build --config Release --parallel
 
-      # MSVC puts the executable in a per-configuration subdirectory; the single-config generators
-      # do not. Find it rather than guess.
+      # MSVC puts the executable in a per-configuration subdirectory. Find it rather than guess.
       - name: collect the artifact
         shell: bash
         run: |
           set -e
-          stage="apeiron-${{ matrix.name }}"
+          stage="apeiron-windows-x86_64"
           mkdir -p "$stage"
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            # A bundle, not a file: copy the whole .app across with its icon and Info.plist.
-            app=$(find build -maxdepth 3 -name 'Apeiron.app' -type d | head -1)
-            test -n "$app" || { echo "no Apeiron.app under build/"; find build -maxdepth 3 | head -40; exit 1; }
-            echo "found $app"
-            cp -R "$app" "$stage/"
-            exe="$app/Contents/MacOS/Apeiron"
-          else
-            exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
-            test -n "$exe" || { echo "no ${{ matrix.binary }} under build/"; find build -maxdepth 3 -type f | head -40; exit 1; }
-            echo "found $exe"
-            cp "$exe" "$stage/"
-          fi
+          exe=$(find build -maxdepth 3 -name 'apeiron.exe' -type f | head -1)
+          test -n "$exe" || { echo "no apeiron.exe under build/"; find build -maxdepth 3 -type f | head -40; exit 1; }
+          echo "found $exe"
+          cp "$exe" "$stage/"
           cp README.md "$stage/"
           find build/_deps -name 'LICENSE.txt' -path '*sdl*' -exec cp {} "$stage/SDL-LICENSE.txt" \; || true
 
@@ -148,11 +103,9 @@ jobs:
 
               python3 tools/extract_assets.py <the installed Apeiron folder> assets
 
-          Put the resulting "assets" folder beside this executable, or pass its path:
+          Put the resulting "assets" folder beside apeiron.exe, or pass its path:
 
-              apeiron /some/where/assets
-
-          On a Mac, put it beside Apeiron.app or inside Apeiron.app/Contents/Resources.
+              apeiron.exe C:\some\where\assets
 
           If the game cannot find it, it puts up a folder picker and remembers what you choose,
           so you only have to point at it once.
@@ -161,121 +114,22 @@ jobs:
           SDL3 is linked statically and is zlib-licensed - see SDL-LICENSE.txt.
           TXT
 
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$stage.zip" "$stage"
-          else
-            tar czf "$stage.tar.gz" "$stage"
-          fi
-          ls -la apeiron-*
-
-      - name: check the binary refuses a missing assets folder cleanly
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set +e
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            exe=$(find build -maxdepth 4 -path '*Apeiron.app/Contents/MacOS/Apeiron' | head -1)
-          else
-            exe=$(find build -maxdepth 3 -name '${{ matrix.binary }}' -type f | head -1)
-          fi
-          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$exe" ./no-such-assets
-          status=$?
-          set -e
-          echo "exit status $status"
-          test "$status" -lt 128          # a message and a non-zero exit, not a crash
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: apeiron-${{ matrix.name }}
-          path: |
-            apeiron-*.zip
-            apeiron-*.tar.gz
-          if-no-files-found: error
-
-  # ---------------------------------------------------------------------------- libretro cores
-  # The same game sources, built against a libretro backend instead of SDL. RetroArch supplies the
-  # window, the on-screen controls and the content browser, which is what makes a phone and a
-  # Google TV box practical targets at all.
-  cores:
-    name: ${{ matrix.name }}
-    needs: stamp
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: libretro-windows-x86_64
-            platform: win
-            artifact: apeiron_libretro.dll
-          - name: libretro-android-armv7
-            platform: android-armv7
-            artifact: apeiron_libretro_android.so
-            abi: armeabi-v7a
-          - name: libretro-android-arm64
-            platform: android-arm64
-            artifact: apeiron_libretro_android.so
-            abi: arm64-v8a
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: install the MinGW cross compiler
-        if: matrix.platform == 'win'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
-
-      - name: build the core
-        run: |
-          set -e
-          export NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          make -C libretro platform=${{ matrix.platform }} \
-               BUILD_STAMP=${{ needs.stamp.outputs.stamp }} \
-               BUILD_NAME=${{ needs.stamp.outputs.name }}
-
-      - name: collect the artifact
-        run: |
-          set -e
-          core=$(find build-libretro -name '${{ matrix.artifact }}' -type f | head -1)
-          test -n "$core" || { echo "no ${{ matrix.artifact }}"; find build-libretro | head -40; exit 1; }
-          file "$core"
-          stage="apeiron-${{ matrix.name }}"
-          mkdir -p "$stage"
-          cp "$core" "$stage/"
-          cp libretro/apeiron_libretro.info "$stage/"
-          cp README.md "$stage/"
-          cat > "$stage/HOW-TO-RUN.txt" <<'TXT'
-          Apeiron - a libretro core
-          =========================
-
-          Put the core where RetroArch keeps its cores, and the .info file beside it.
-
-          The artwork is NOT in here. It is Ambrosia Software's, and this port reads it out of
-          the game's own resource forks rather than shipping copies. Make it from your own copy:
-
-              python3 tools/extract_assets.py <the installed Apeiron folder> assets
-
-          Then put that folder in RetroArch's *system* directory as:
-
-              <system>/apeiron/assets
-
-          and start the core with no content. If you would rather keep the artwork somewhere
-          else, use "Load Content" and pick any file inside your assets folder instead.
-
-          Controls: the left stick or the d-pad steers, B or A fires, Start pauses, Select goes
-          back to the title. In the menus the stick moves a pointer and A clicks; a touch screen
-          works there too.
-          TXT
-          tar czf "$stage.tar.gz" "$stage"
+          7z a "$stage.zip" "$stage"
           ls -la apeiron-*
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apeiron-${{ matrix.name }}
-          path: apeiron-*.tar.gz
+          name: apeiron-windows-x86_64
+          path: apeiron-*.zip
           if-no-files-found: error
 
   # ----------------------------------------------------------------------- the Android build
-  # A sideloadable APK rather than a libretro core: it appears on the Google TV home screen by
-  # itself, and finds its artwork through the game's own folder browser instead of RetroArch's
-  # system directory.
+  # A sideloadable APK: it appears on the Google TV home screen by itself, and finds its artwork
+  # through the game's own folder browser. 32-bit ARM only.
+  #
+  # SDL is not compiled here. SDL's own release carries a prebuilt AAR - its Java and a built
+  # libSDL3.so for each ABI - which android/get-sdl.sh downloads, checks against the checksum pinned
+  # in android/SDL_SHA256 and unpacks into app/libs.
   android:
     name: android-apk
     needs: stamp
@@ -292,8 +146,8 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: fetch SDL for the Android port
-        run: ./android/fetch-sdl.sh
+      - name: fetch SDL's prebuilt Android package
+        run: ./android/get-sdl.sh
 
       - name: build the APK
         run: |
@@ -317,9 +171,18 @@ jobs:
           cp "$apk" "$stage/apeiron.apk"
           cp README.md "$stage/"
           unzip -l "$apk" | grep -E 'lib/|\.so' || true
+
+          # What actually went into it. A build that quietly picked up the wrong ABI, or came out
+          # without SDL's Java, installs fine and then does not start.
+          libs=$(unzip -Z1 "$apk" | grep -E '^lib/' | LC_ALL=C sort)
+          echo "$libs"
+          test "$libs" = "$(printf 'lib/armeabi-v7a/libSDL3.so\nlib/armeabi-v7a/libmain.so')" \
+            || { echo "expected exactly libSDL3.so and libmain.so for armeabi-v7a"; exit 1; }
+          unzip -p "$apk" 'classes*.dex' | grep -aq 'Lorg/libsdl/app/SDLActivity;' \
+            || { echo "SDLActivity is not in the APK"; exit 1; }
           cat > "$stage/HOW-TO-RUN.txt" <<'TXT'
-          Apeiron for Android and Google TV
-          =================================
+          Apeiron for Android and Google TV (32-bit ARM)
+          ==============================================
 
           Sideload apeiron.apk. On a Google TV box the usual way is the Downloader app, or
           `adb install apeiron.apk` over the network.
@@ -329,15 +192,29 @@ jobs:
 
               python3 tools/extract_assets.py <the installed Apeiron folder> assets
 
-          Copy that "assets" folder onto the device - Downloads is the easiest place - and the
-          first time the game starts it will show a browser so you can go and find it. It
-          remembers where it is after that.
+          Put that "assets" folder in the device's Download folder. The first time the game
+          starts it asks Android for permission to read files - choose Allow - and then looks in
+          Download by itself. If it is somewhere else, the game shows a folder browser (remote,
+          gamepad, mouse or touch) so you can go and find it; it remembers the choice.
 
-          Grant storage permission when it asks, or the browser will show empty folders.
+          If Android will not let the game read the Download folder - on Android 11 and later
+          the system decides which files in a shared folder an app may see - there are two ways
+          round it, both from a computer with adb:
+
+            1. Put the folder where the game needs no permission at all. The game's diagnostics
+               screen (left or right in the folder browser) prints the exact path; it is
+               /sdcard/Android/data/io.github.takasky85.apeiron/files/assets, so:
+
+                   adb push assets /sdcard/Android/data/io.github.takasky85.apeiron/files/assets
+
+            2. Or give it "All files access":
+
+                   adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow
 
           Controls: a mouse works, including for steering, if you have one plugged in. Otherwise
           the d-pad or a stick steers and the A button fires. In the menus the stick moves a
-          pointer and A clicks.
+          pointer and A clicks. The diagnostics screen counts mouse, touch, key and gamepad input
+          as it arrives, which is how to tell whether the TV is passing a mouse through at all.
           TXT
           tar czf "$stage.tar.gz" "$stage"
           ls -la apeiron-android*
@@ -350,7 +227,7 @@ jobs:
 
   publish:
     name: publish the release
-    needs: [build, cores, android]
+    needs: [windows, android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
     steps:
@@ -372,18 +249,10 @@ jobs:
           body: |
             ## What is in these downloads
 
-            One executable per platform, with SDL3 linked in. Nothing else is needed to run it -
-            no SDL3.dll, no MinGW runtime, no libiconv.
-
             | | |
             | - | - |
-            | `apeiron-windows-x86_64.zip` | Windows 10/11, 64-bit |
-            | `apeiron-linux-x86_64.tar.gz` | Linux, 64-bit |
-            | `apeiron-macos-universal.tar.gz` | macOS, Apple silicon and Intel - a .app bundle |
-            | `apeiron-libretro-windows-x86_64.tar.gz` | a RetroArch core for Windows |
-            | `apeiron-libretro-android-armv7.tar.gz` | a RetroArch core for 32-bit ARM Android |
-            | `apeiron-libretro-android-arm64.tar.gz` | a RetroArch core for 64-bit ARM Android |
-            | `apeiron-android.tar.gz` | a sideloadable APK for Google TV and Android |
+            | `apeiron-windows-x86_64.zip` | Windows 11 (and 10), 64-bit - one executable with SDL3 linked in, nothing else needed |
+            | `apeiron-android.tar.gz` | a sideloadable APK for Google TV and other 32-bit ARM Android - built against SDL's official prebuilt Android package |
 
             ## What is NOT in them
 
@@ -395,5 +264,5 @@ jobs:
             python3 tools/extract_assets.py <the installed Apeiron folder> assets
             ```
 
-            Put the `assets` folder beside the executable, or pass its path as the first argument.
+            Put the `assets` folder beside the executable (Android: in the Download folder), or pass its path as the first argument on Windows.
             Without it the game stops at startup and says `missing assets`.

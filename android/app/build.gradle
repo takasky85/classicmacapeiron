@@ -5,6 +5,10 @@ plugins { id 'com.android.application' }
 def buildStamp = project.findProperty('apeironStamp') ?: new Date().format('yyMMddHHmm')
 def buildName  = project.findProperty('apeironName')  ?: ''
 
+// The SDL release this is built against. One line in android/SDL_VERSION, read by get-sdl.sh as
+// well, so the file that is downloaded and the file that is linked cannot drift apart.
+def sdlVersion = new File(rootDir, 'SDL_VERSION').text.trim()
+
 android {
     namespace 'io.github.takasky85.apeiron'
     compileSdk 34
@@ -30,24 +34,18 @@ android {
                           "-DAPEIRON_BUILD_NAME=${buildName}"
             }
         }
-        // 32-bit ARM is the one that matters for the older Google TV boxes; 64-bit is nearly
-        // free and is what a current phone or Chromecast would rather run. x86_64 covers the
-        // x86 TV boxes and Chromebooks, and is what the emulator in CI can actually boot -
-        // which is the only way this build gets started before a release goes out.
-        // -PapeironAbis=x86_64 builds just the one, which is what that job does.
+        // 32-bit ARM only: that is the Google TV box this is for. A phone, a newer Chromecast or
+        // a Chromebook would want another, and -PapeironAbis=arm64-v8a,x86_64 builds them - the
+        // SDL AAR carries all four - but they are not shipped.
         ndk {
             abiFilters.addAll(
-                ((project.findProperty('apeironAbis') ?: 'armeabi-v7a,arm64-v8a,x86_64') as String)
+                ((project.findProperty('apeironAbis') ?: 'armeabi-v7a') as String)
                     .split(',').collect { it.trim() }.findAll { it })
         }
     }
 
-    sourceSets {
-        main {
-            // SDL's own Activity and input plumbing, compiled straight out of the checkout.
-            java.srcDirs += ['../SDL/android-project/app/src/main/java']
-        }
-    }
+    // Lets CMake's find_package(SDL3) see the native half of the AAR.
+    buildFeatures { prefab true }
 
     externalNativeBuild { cmake { path 'jni/CMakeLists.txt' } }
 
@@ -61,4 +59,20 @@ android {
         }
     }
     lint { abortOnError false }
+}
+
+dependencies {
+    // SDL's Java (SDLActivity and the rest) and its prebuilt libSDL3.so, in one file.
+    // android/get-sdl.sh downloads it.
+    implementation files("libs/SDL3-${sdlVersion}.aar")
+}
+
+// A missing AAR otherwise shows up as a Gradle error about an unresolvable file; say what to do.
+tasks.configureEach { t ->
+    if (t.name.startsWith('pre') && t.name.endsWith('Build')) {
+        t.doFirst {
+            if (!file("libs/SDL3-${sdlVersion}.aar").exists())
+                throw new GradleException("libs/SDL3-${sdlVersion}.aar is missing - run android/get-sdl.sh")
+        }
+    }
 }

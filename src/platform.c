@@ -166,6 +166,8 @@ bool plat_init(const char *title)
     return true;
 }
 
+InputCounts in_count;
+
 void pump(void)
 {
     SDL_Event e;
@@ -177,10 +179,12 @@ void pump(void)
          * position instead of a delta (libsdl-org/SDL#14926). xrel/yrel are the same numbers SDL
          * would accumulate for that call, and reading them here means one path on every platform. */
         if (e.type == SDL_EVENT_MOUSE_MOTION) {
+            if (e.motion.which == SDL_TOUCH_MOUSEID) in_count.touch_move++; else in_count.mouse_move++;
             rel_x += e.motion.xrel;
             rel_y += e.motion.yrel;
         }
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            if (e.button.which == SDL_TOUCH_MOUSEID) in_count.touch_btn++; else in_count.mouse_btn++;
             button_event = true; have_click = true;
             click_x = (int)((e.button.x * px_density - last_gx) / last_scale);
             click_y = (int)((e.button.y * px_density - last_gy) / last_scale);
@@ -190,7 +194,9 @@ void pump(void)
         if (e.type == SDL_EVENT_TEXT_INPUT && ntyped < (int)sizeof typed - 1)
             for (const char *t = e.text.text; *t; t++)
                 if ((unsigned char)*t >= 32 && ntyped < (int)sizeof typed - 1) typed[ntyped++] = *t;
+        if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) in_count.pad++;
         if (e.type == SDL_EVENT_KEY_DOWN) {
+            in_count.key++;
             if (e.key.key == SDLK_F11) toggle_fullscreen();
             else button_event = true;
         }
@@ -289,7 +295,14 @@ void mouse_relative(bool on)
         abs_have = false;
         abs_recentre();
     } else {
-        SDL_SetWindowRelativeMouseMode(g_win, on);
+        if (!SDL_SetWindowRelativeMouseMode(g_win, on) && on) {
+            /* Not every platform can capture the pointer (Android before 8, say). Rather than
+             * leave the ship without a mouse, read the pointer's own position instead. */
+            diag_note("mouse: relative mode refused (%s) - tracking the pointer instead", SDL_GetError());
+            abs_on = true; abs_have = false;
+            SDL_HideCursor();
+            abs_recentre();
+        }
         if (!on) SDL_ShowCursor();
     }
     pump();

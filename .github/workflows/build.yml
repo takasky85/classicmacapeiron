@@ -29,6 +29,30 @@ jobs:
                 -c "$f" -o /dev/null
           done
 
+      # The Android half of the code (the permission request, the app's own folders, the extra
+      # places the artwork is looked for) is behind __ANDROID__ and would otherwise never be
+      # compiled until an APK was built. Against the stub it costs nothing to check here.
+      - name: compile src/ as Android, with warnings as errors
+        run: |
+          for f in src/*.c; do
+            gcc -std=gnu11 -D__ANDROID__ -Itools/test -Isrc \
+                -Wall -Wextra -Werror -Wno-unused-parameter \
+                -c "$f" -o /dev/null
+          done
+
+      # Every source file has to be in the desktop list and the Android list. Forgetting one
+      # compiles fine everywhere above and fails at link time in a release.
+      - name: every source file is in both build lists
+        run: |
+          rc=0
+          for f in src/*.c; do
+            b=$(basename "$f")
+            for list in CMakeLists.txt android/app/jni/CMakeLists.txt; do
+              grep -q "$b" "$list" || { echo "$b is not in $list"; rc=1; }
+            done
+          done
+          exit $rc
+
       - name: link the headless build
         run: |
           gcc -std=gnu11 -w -Itools/test -Isrc \
@@ -44,6 +68,20 @@ jobs:
           set -e
           echo "exit status $status"
           test "$status" -lt 128
+
+      # The same under the Android code paths: nothing is found, nobody is at the screen, and the
+      # permission request must not wait for an answer that cannot come.
+      - name: run the Android build of it without assets and expect a clean refusal
+        run: |
+          gcc -std=gnu11 -w -D__ANDROID__ -Itools/test -Isrc \
+              -o apeiron_android_headless src/*.c tools/test/sdl3_stub.c -lm
+          set +e
+          STUB_EXTERNAL=$PWD/none STUB_INTERNAL=$PWD/none NOAUDIO=1 LIMIT_MS=2000 \
+              timeout 60 ./apeiron_android_headless
+          status=$?
+          set -e
+          echo "exit status $status"
+          test "$status" -eq 1
 
   # The Windows compiler, on every push, because twice now a change has compiled perfectly on
   # Linux and broken a Windows target that is only built when a release is cut - so the first
@@ -77,70 +115,10 @@ jobs:
       - name: compile every tool
         run: python3 -m compileall -q tools
 
-  cmake:
-    name: configure without SDL3 or assets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # No SDL3 is installed here on purpose: CMakeLists should fetch it. And there is no assets/,
-      # which the post-build copy step used to fail the whole build over. Configuring is enough to
-      # check both - the full compile and link is what the release workflow does.
-      # SDL3 will not configure without X11 or Wayland development headers, which the runner image
-      # does not carry. This is the same list the release workflow installs, and it has to stay the
-      # same list: from the 3.4 series SDL treats a dependency it looked for and did not find as an
-      # error rather than a feature to leave out, so a package missing here fails the configure
-      # outright. It was a short subset of the release list, and XTEST missing from it was enough.
-      - name: install SDL3's build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
-            libxi-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
-            libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev \
-            libibus-1.0-dev libudev-dev libwayland-dev wayland-protocols \
-            libdecor-0-dev libxtst-dev libpipewire-0.3-dev libsamplerate0-dev
-      - name: cache the fetched SDL3
-        uses: actions/cache@v4
-        with:
-          path: build/_deps
-          key: sdl3-configure-${{ hashFiles('CMakeLists.txt') }}
-      - name: cmake configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
-  # The libretro core is the same game sources behind a different backend, so it can rot in
-  # exactly the way the headless harness can. This builds it and runs it in the little test
-  # frontend under libretro/test, which loads the core the way RetroArch does. There is no
-  # artwork here, so what is being checked is that the core loads, that every entry point the
-  # frontend needs is exported, that retro_run returns a frame rather than hanging, and that it
-  # says what it needs and stops cleanly rather than crashing.
-  libretro:
-    name: build and run the libretro core
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: build the core and the test frontend
-        run: make -C libretro test
-      - name: run it with no artwork and expect a clean refusal
-        run: |
-          set +e
-          ./build-libretro/native/frontend \
-              ./build-libretro/native/apeiron_libretro.so /tmp/no-such-system 120
-          status=$?
-          set -e
-          echo "exit status $status"
-          test "$status" -lt 128
-      - name: cross-compile for Android, both ABIs
-        run: |
-          export NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          make -C libretro platform=android-armv7
-          make -C libretro platform=android-arm64
-          find build-libretro -name '*.so' -exec file {} \;
-
   # The APK is the one build that can break without anybody noticing until a release: nothing
   # else here compiles the game for Android or exercises the Gradle project. Debug build only,
-  # which is enough to catch a broken manifest, a missing resource or a source file that was
-  # added to CMakeLists but not to the Android one.
+  # which is enough to catch a broken manifest, a missing resource, a source file that was
+  # added to CMakeLists but not to the Android one, or an SDL package that no longer unpacks.
   android:
     name: build the Android APK
     runs-on: ubuntu-latest
@@ -155,8 +133,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: fetch SDL for the Android port
-        run: ./android/fetch-sdl.sh
+      - name: fetch SDL's prebuilt Android package
+        run: ./android/get-sdl.sh
       - name: assemble
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"

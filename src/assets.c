@@ -74,6 +74,40 @@ static char *xstrdup(const char *s) { size_t n = strlen(s) + 1; char *p = (char 
  * be read straight back out of the images the extractor wrote. */
 static void clut_from_image(const Image *im, Rgb *out) { memcpy(out, im->pal, sizeof(Rgb) * 256); }
 
+/* Where the game's own writes go: scores.txt and options.txt.
+ *
+ * On a desktop that is the artwork folder, as it always was - the folder beside the executable is
+ * the player's own and is writable. On Android it cannot be. The artwork is usually somewhere in
+ * Download, which this app can at best read: writing there needs a permission that a TV may not
+ * even offer a way to grant, and without it every high score and every changed option would be
+ * dropped on the floor with nothing to say so. The app's own private folder needs no permission
+ * at all and is always writable, so that is where they go.
+ *
+ * Reading goes there first and then falls back to the artwork folder, because scores.txt is also
+ * the table of starting scores the extractor puts in the artwork, and loading the game needs it
+ * before anything has ever been saved. */
+static bool state_dir(char *out, size_t n)
+{
+#ifdef __ANDROID__
+    const char *p = SDL_GetAndroidInternalStoragePath();
+    if (p && *p) { snprintf(out, n, "%s", p); return true; }
+#endif
+    (void)out; (void)n;
+    return false;
+}
+
+static FILE *state_open(const char *dir, const char *name, const char *mode)
+{
+    char p[1300], sd[1100];
+    if (state_dir(sd, sizeof sd)) {
+        snprintf(p, sizeof p, "%s/%s", sd, name);
+        FILE *f = fopen(p, mode);
+        if (f || mode[0] != 'r') return f;     /* a write has nowhere else to go */
+    }
+    snprintf(p, sizeof p, "%s/%s", dir, name);
+    return fopen(p, mode);
+}
+
 static bool load_text_data(const char *dir)
 {
     char p[1024], line[600];
@@ -102,9 +136,8 @@ static bool load_text_data(const char *dir)
         fclose(f);
     }
 
-    snprintf(p, sizeof p, "%s/scores.txt", dir);
-    f = fopen(p, "rb");
-    if (!f) { SDL_Log("cannot open %s", p); return false; }
+    f = state_open(dir, "scores.txt", "rb");
+    if (!f) { SDL_Log("cannot open scores.txt"); return false; }
     bool ok = fgets(line, sizeof line, f) && sscanf(line, "volume %d", &A.pref_volume) == 1;
     ok = ok && fgets(line, sizeof line, f) && sscanf(line, "music %d", &A.pref_music) == 1;
     for (int i = 0; ok && i < 10; i++) {
@@ -175,9 +208,7 @@ static bool load_about_page(const char *dir, int n)
 
 void assets_save_scores(const char *dir)
 {
-    char p[1024];
-    snprintf(p, sizeof p, "%s/scores.txt", dir);
-    FILE *f = fopen(p, "wb");
+    FILE *f = state_open(dir, "scores.txt", "wb");
     if (!f) return;
     fprintf(f, "volume %d\nmusic %d\n", A.pref_volume, A.pref_music);
     for (int i = 0; i < 10; i++)
@@ -195,9 +226,8 @@ void assets_load_options(const char *dir)
      * again after the sheets are in so the artwork pack can be switched. The first pass must not
      * touch the pack - there would be nothing to reload. */
     static bool have_sheets = false;
-    char p[1024], line[256];
-    snprintf(p, sizeof p, "%s/options.txt", dir);
-    FILE *f = fopen(p, "rb");
+    char line[256];
+    FILE *f = state_open(dir, "options.txt", "rb");
     if (!f) return;
     while (fgets(line, sizeof line, f)) {
         char key[64]; int v;
@@ -226,9 +256,7 @@ void assets_load_options(const char *dir)
 
 void assets_save_options(const char *dir)
 {
-    char p[1024];
-    snprintf(p, sizeof p, "%s/options.txt", dir);
-    FILE *f = fopen(p, "wb");
+    FILE *f = state_open(dir, "options.txt", "wb");
     if (!f) return;
     fprintf(f, "scale %d\nmouse %d\nkeyboard %d\npad %d\ndeadzone %d\npack %d\ndebug %d\n"
                "maximize %d\nstartwave %d\nmouseabs %d\n",
@@ -310,7 +338,7 @@ void assets_remember_dir(const char *dir)
 const char *assets_find_dir(char *out, size_t n)
 {
     const char *base = SDL_GetBasePath();         /* inside a .app this is Contents/Resources/ */
-    const char *tries[6];
+    const char *tries[12];
     char b1[1200], b2[1200], b3[1200], remembered[1200];
     int t = 0;
     tries[t++] = "assets";                        /* beside whatever launched us */
@@ -319,6 +347,20 @@ const char *assets_find_dir(char *out, size_t n)
         snprintf(b2, sizeof b2, "%s../Resources/assets", base); tries[t++] = b2;
         snprintf(b3, sizeof b3, "%s../../../assets", base);   tries[t++] = b3;  /* beside the .app */
     }
+#ifdef __ANDROID__
+    /* Three places the artwork can be on a TV, nearest the player first. The app's own folders
+     * need no permission, so a folder put there with adb is found with nothing asked or granted;
+     * Download is what a person with a file manager or the Downloader app will have used, and it
+     * is readable only once the storage permission has been given - which is why this is asked
+     * again after it is, not once before the window exists. */
+    char and1[1200], and2[1200];
+    const char *ext = SDL_GetAndroidExternalStoragePath();
+    const char *inr = SDL_GetAndroidInternalStoragePath();
+    if (ext && *ext) { snprintf(and1, sizeof and1, "%s/assets", ext); tries[t++] = and1; }
+    if (inr && *inr) { snprintf(and2, sizeof and2, "%s/assets", inr); tries[t++] = and2; }
+    tries[t++] = "/sdcard/Download/assets";
+    tries[t++] = "/storage/emulated/0/Download/assets";
+#endif
     char pf[1200];
     pointer_file(pf, sizeof pf);
     remembered[0] = 0;

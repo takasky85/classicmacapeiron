@@ -76,7 +76,7 @@ static const char *os_name(void)
 
 /* ---- the report ------------------------------------------------------------------------------ */
 
-#define MAX_ROWS 40
+#define MAX_ROWS 48
 static char rows[MAX_ROWS][NOTE_LEN];
 static int  n_rows;
 
@@ -133,15 +133,25 @@ static void build_report(void)
     if (pref) SDL_free(pref);
 
     row("");
+    row("Input: %s", pad_present() ? pad_name() : "no gamepad found");
+#ifdef __ANDROID__
+    row("");
+    row("Android:");
+    row("  version (API level)   %d", SDL_GetAndroidSDKVersion());
+    row("  read Download folder  %s", droid_storage_state());
+    probe("app folder (no permission)", SDL_GetAndroidExternalStoragePath());
+    const char *ext = SDL_GetAndroidExternalStoragePath();
+    if (ext) row("    put the artwork in %s/assets", ext);
+    probe("app private folder", SDL_GetAndroidInternalStoragePath());
+#endif
+
+    row("");
     row("Where the artwork was looked for:");
     for (int i = 0; i < assets_candidate_count(); i++) {
         const char *p = assets_candidate(i);
         if (p) probe(p, p);
     }
     probe("beside the game", "assets");
-
-    row("");
-    row("Input: %s", pad_present() ? pad_name() : "no gamepad found");
 }
 
 /* ---- the screen ------------------------------------------------------------------------------ */
@@ -184,9 +194,17 @@ void diag_screen(void)
         mini_text(16, y, "What happened on the way in:", D_TITLE);
         y += 12;
         int first = n_notes > NOTES ? n_notes - NOTES : 0;
-        for (int i = first; i < n_notes && y < SCREEN_H - 24; i++, y += 10)
+        for (int i = first; i < n_notes && y < SCREEN_H - 36; i++, y += 10)
             mini_text(16, y, notes[i % NOTES], D_DIM);
 
+        /* Heard so far, live: move a mouse and its number should climb. A touch screen is counted
+         * separately because Android reports it as a mouse too, which would otherwise make a TV
+         * that has no mouse attached look as though it had one. */
+        char heard[120];
+        snprintf(heard, sizeof heard, "heard: mouse %u/%u  touch %u/%u  keys %u  pad %u   (moves/clicks)",
+                 in_count.mouse_move, in_count.mouse_btn, in_count.touch_move, in_count.touch_btn,
+                 in_count.key, in_count.pad);
+        mini_text(16, SCREEN_H - 28, heard, D_INK);
         mini_text(16, SCREEN_H - 14, "any key, any button or a tap goes back", D_TITLE);
         set_entries();
         present();

@@ -38,6 +38,7 @@ typedef enum {
 } SDL_Scancode;
 enum { SDL_EVENT_QUIT = 0x100, SDL_EVENT_KEY_DOWN = 0x300, SDL_EVENT_TEXT_INPUT = 0x303,
        SDL_EVENT_MOUSE_MOTION = 0x400, SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401,
+       SDL_EVENT_GAMEPAD_AXIS_MOTION = 0x650, SDL_EVENT_GAMEPAD_BUTTON_DOWN = 0x651,
        SDL_EVENT_WINDOW_FOCUS_GAINED = 0x20d, SDL_EVENT_WINDOW_FOCUS_LOST = 0x20e };
 typedef struct { Uint8 r, g, b, a; } SDL_Color;
 typedef struct { int ncolors; SDL_Color *colors; } SDL_Palette;
@@ -88,8 +89,8 @@ bool SDL_RaiseWindow(SDL_Window *);
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED "SDL_WINDOW_ACTIVATE_WHEN_RAISED"
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN "SDL_WINDOW_ACTIVATE_WHEN_SHOWN"
 #define SDL_HINT_FORCE_RAISEWINDOW "SDL_FORCE_RAISEWINDOW"
-/* Set under __ANDROID__, which the libretro core's Android targets define while still compiling
- * against this stub rather than real SDL headers - so it has to be spelled out here too. */
+/* Set under __ANDROID__, which CI also compiles against this stub rather than real SDL headers -
+ * so it has to be spelled out here too. */
 #define SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY "SDL_ANDROID_ALLOW_RECREATE_ACTIVITY"
 typedef enum { SDL_FLASH_BRIEFLY = 1 } SDL_FlashOperation;
 bool SDL_SetHint(const char *, const char *);
@@ -152,3 +153,21 @@ const char *SDL_GetBasePath(void);
 const char *SDL_GetCurrentVideoDriver(void);
 float SDL_GetWindowPixelDensity(SDL_Window *);
 #define SDL_WINDOW_HIGH_PIXEL_DENSITY 0x0000000000002000ULL
+
+/* What the Android build asks of SDL: where the app's own folders are, what the OS version is, and
+ * the runtime-permission request. SDL_TOUCH_MOUSEID is the "mouse" a touch screen is reported as. */
+#ifndef SDLCALL
+#define SDLCALL
+#endif
+#define SDL_TOUCH_MOUSEID ((Uint32)-1)
+typedef struct { volatile int value; } SDL_AtomicInt;
+static inline int SDL_SetAtomicInt(SDL_AtomicInt *a, int v) { int o = a->value; a->value = v; return o; }
+static inline int SDL_GetAtomicInt(SDL_AtomicInt *a) { return a->value; }
+typedef void (SDLCALL *SDL_RequestAndroidPermissionCallback)(void *userdata, const char *permission, bool granted);
+bool SDL_RequestAndroidPermission(const char *, SDL_RequestAndroidPermissionCallback, void *);
+const char *SDL_GetAndroidInternalStoragePath(void);
+const char *SDL_GetAndroidExternalStoragePath(void);
+Uint32 SDL_GetAndroidExternalStorageState(void);
+int SDL_GetAndroidSDKVersion(void);
+#define SDL_ANDROID_EXTERNAL_STORAGE_READ 0x01u
+#define SDL_ANDROID_EXTERNAL_STORAGE_WRITE 0x02u

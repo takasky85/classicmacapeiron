@@ -149,6 +149,13 @@ int  assets_candidate_count(void);
 const char *assets_candidate(int i);
 /* SDL_Log plus a copy kept for the diagnostics screen, which is the only way to read it on a TV. */
 void diag_note(const char *fmt, ...);
+bool droid_ask_storage(void);        /* Android: ask to read Download; true if granted. No-op elsewhere */
+const char *droid_storage_state(void);
+
+/* What kind of input has actually arrived, counted as it comes, so the diagnostics screen can say
+ * whether a mouse is being heard - and whether what is heard is a mouse or a touch screen. */
+typedef struct { unsigned mouse_move, mouse_btn, touch_move, touch_btn, key, pad; } InputCounts;
+extern InputCounts in_count;
 void diag_screen(void);
 void fill_rect(int x, int y, int w, int h, uint8_t c);
 void draw_line(int x0, int y0, int x1, int y1, uint8_t c);

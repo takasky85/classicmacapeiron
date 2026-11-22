@@ -20,8 +20,8 @@ options.txt
 __pycache__/
 *.pyc
 .DS_Store
-build-libretro/
 android/SDL/
+android/app/libs/
 android/.gradle/
 android/app/build/
 android/build/

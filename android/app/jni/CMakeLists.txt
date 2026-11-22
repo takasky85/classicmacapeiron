@@ -3,20 +3,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(apeiron_android C)
 
-set(SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../SDL")
-if(NOT EXISTS "${SDL_DIR}/CMakeLists.txt")
-  message(FATAL_ERROR "no SDL at ${SDL_DIR} - run android/fetch-sdl.sh first")
-endif()
-
-set(SDL_SHARED ON  CACHE BOOL "" FORCE)    # SDLActivity dlopens it by name
-set(SDL_STATIC OFF CACHE BOOL "" FORCE)
-set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
-add_subdirectory("${SDL_DIR}" sdl)
+# SDL comes from the official prebuilt AAR (android/get-sdl.sh puts it in app/libs, Gradle's
+# prefab support exposes it here). Nothing of SDL is compiled by this build.
+find_package(SDL3 REQUIRED CONFIG)
 
 set(GAME "${CMAKE_CURRENT_SOURCE_DIR}/../../../src")
 add_library(main SHARED
   ${GAME}/main.c ${GAME}/platform.c ${GAME}/assets.c ${GAME}/intro.c ${GAME}/game.c
-  ${GAME}/minifont.c ${GAME}/browse.c ${GAME}/diag.c ${GAME}/dirs.c)
+  ${GAME}/minifont.c ${GAME}/browse.c ${GAME}/diag.c ${GAME}/dirs.c ${GAME}/droid.c)
 
 target_include_directories(main PRIVATE ${GAME})
 target_compile_definitions(main PRIVATE

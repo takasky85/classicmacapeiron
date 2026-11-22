@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:installLocation="auto">
 
     <uses-feature android:glEsVersion="0x00020000" />
@@ -14,10 +15,15 @@
          synthesising touches from them. -->
     <uses-feature android:name="android.hardware.type.pc"     android:required="false" />
 
-    <!-- The artwork is not in the APK: you point the game at a folder, usually in Downloads,
-         and it opens the files in it. -->
+    <!-- The artwork is not in the APK: the game reads it from a folder, usually in Downloads.
+         READ is asked for at run time, only if the artwork was not found without it.
+         Nothing is written outside the app's own folders, so there is no WRITE permission. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Declared and never asked for from inside the game. It exists so that, if a TV will not
+         let the Download folder be read any other way, "All files access" can be granted from a
+         computer with:  adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow  -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:label="@string/app_name"

@@ -48,7 +48,21 @@ int main(int argc, char **argv)
         dir = assets_find_dir(found, sizeof found);
         assets_load_options(dir);
     }
-    if (!assets_load(dir)) {
+    bool loaded = assets_load(dir);
+#ifdef __ANDROID__
+    if (!loaded) {
+        /* Not found with what the app can read unaided. The Download folder is the obvious place
+         * and Android keeps it behind a permission, so ask once - and only now, so a player whose
+         * artwork is already in the app's own folder is never asked for anything. */
+        droid_ask_storage();
+        if (argc <= 1) {
+            dir = assets_find_dir(found, sizeof found);
+            diag_note("apeiron: after the permission, artwork guess '%s'", dir ? dir : "(none)");
+            loaded = assets_load(dir);
+        }
+    }
+#endif
+    if (!loaded) {
         /* Nothing where it was expected. Rather than exit with a line in a log nobody will read -
          * and a .app started from the Finder has no console at all - put up the system's folder
          * picker and take what it is given. The choice is remembered for next time. */
