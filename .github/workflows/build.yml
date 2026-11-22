@@ -145,3 +145,7 @@ jobs:
           apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
           ls -la "$apk"
           unzip -l "$apk" | grep -E 'lib/|AndroidManifest'
+          # Both classes the manifest and SDL need must be in the dex.
+          for c in 'Lorg/libsdl/app/SDLActivity;' 'Lio/github/takasky85/apeiron/MainActivity;'; do
+            unzip -p "$apk" 'classes*.dex' | grep -aq "$c" || { echo "missing $c"; exit 1; }
+          done

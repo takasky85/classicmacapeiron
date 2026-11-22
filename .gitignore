@@ -3,8 +3,8 @@ build/
 *.o
 *.obj
 *.exe
-apeiron
-apeiron_headless
+/apeiron
+/apeiron_headless
 
 # The extracted artwork, fonts and sounds. These are Ambrosia Software's, lifted out of the game's
 # own resource forks by tools/extract_assets.py, and they are deliberately not committed: run that

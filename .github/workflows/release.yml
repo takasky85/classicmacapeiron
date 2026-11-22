@@ -180,6 +180,11 @@ jobs:
             || { echo "expected exactly libSDL3.so and libmain.so for armeabi-v7a"; exit 1; }
           unzip -p "$apk" 'classes*.dex' | grep -aq 'Lorg/libsdl/app/SDLActivity;' \
             || { echo "SDLActivity is not in the APK"; exit 1; }
+          # The class the manifest names. It was once missing - a .gitignore pattern meant for the
+          # executable also matched its folder - and an APK without it installs and then closes
+          # the instant it is opened.
+          unzip -p "$apk" 'classes*.dex' | grep -aq 'Lio/github/takasky85/apeiron/MainActivity;' \
+            || { echo "MainActivity is not in the APK"; exit 1; }
           cat > "$stage/HOW-TO-RUN.txt" <<'TXT'
           Apeiron for Android and Google TV (32-bit ARM)
           ==============================================
