@@ -66,6 +66,7 @@ typedef struct Ent {
     bool    counts;            /* made by [StartLevel], so the wave is not over until it dies */
     bool    poisoned;
     int     wedge_x, wedge_t;  /* where a head last made headway sideways, and when (#55) */
+    bool    wedge_up, wedge_dn;/* whether it has gone both up and down since then */
 } Ent;
 
 static Ent ent[MAX_ENT];
@@ -525,22 +526,27 @@ static void pede_head_step(Ent *e)
     e->iy = y;
 }
 
-/* A head that has gone nowhere sideways for eight seconds is wedged - a stack of mushrooms down a
- * side wall can hold one bouncing between them for ever, with its whole body piled up along the
- * edge (#55) - so it tramples what is in its way: the mushrooms around it, a cell either side and
- * the row below, are cleared and it carries on. Nothing in a healthy run gets near this: a head
- * stair-stepping down a wall is out of it in a couple of seconds. */
+/* A head that has been up and down the same few pixels of the field for four seconds is wedged -
+ * mushrooms stacked down a side wall can hold one bouncing between them, its whole body piled up
+ * along the edge (#55: wave 20, then on the right at wave 44 in testing) - so it tramples what is in
+ * its way: the mushrooms around it, a cell either side and above and below, are cleared and it
+ * carries on. A long dive down the field does not count - that is down only, never up as well - and
+ * a healthy head is sideways of its starting point within a second or two. */
 static void pede_unwedge(Ent *e)
 {
     if (!e->wedge_t || abs(e->ix - e->wedge_x) > 24) {
         e->wedge_x = e->ix;
         e->wedge_t = ticks + 1;
+        e->wedge_up = e->wedge_dn = false;
         return;
     }
-    if (ticks + 1 - e->wedge_t < 480) return;
+    if (e->dir == D_UP) e->wedge_up = true;
+    if (e->dir == D_DOWN) e->wedge_dn = true;
+    if (!(e->wedge_up && e->wedge_dn) || ticks + 1 - e->wedge_t < 240) return;
     e->wedge_t = ticks + 1;
+    e->wedge_up = e->wedge_dn = false;
     int col = clampi((e->ix + 8) / CELL, 0, GRID_W - 1), row = clampi((e->iy + 8) / CELL, 0, GRID_H - 1);
-    for (int dc = -1; dc <= 1; dc++)
+    for (int dc = -2; dc <= 2; dc++)
         for (int dr = -1; dr <= 1; dr++)
             if (in_grid(col + dc, row + dr) && shroom[col + dc][row + dr]) {
                 create_scum(FIX((col + dc) * CELL), FIX((row + dr) * CELL));
@@ -549,7 +555,7 @@ static void pede_unwedge(Ent *e)
     e->poisoned = false;
     e->ndir = (e->ix <= (PEDE_XMIN + PEDE_XMAX) / 2) ? D_RIGHT : D_LEFT;
     if (e->dir == D_UP || e->dir == D_DOWN) e->targ = e->dir == D_DOWN ? e->iy + CELL : e->iy - CELL;
-    else e->dir = e->ndir == D_RIGHT ? D_RIGHT : D_LEFT;
+    else e->dir = e->ndir;
     sfx(SND_MUNCH1);
 }
 
