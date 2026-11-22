@@ -32,6 +32,7 @@ typedef enum {
     SDL_SCANCODE_M = 16, SDL_SCANCODE_N = 17, SDL_SCANCODE_S = 22,
     SDL_SCANCODE_W = 26, SDL_SCANCODE_X = 27, SDL_SCANCODE_B = 5, SDL_SCANCODE_Q = 20, SDL_SCANCODE_RETURN = 40, SDL_SCANCODE_KP_ENTER = 88, SDL_SCANCODE_ESCAPE = 41,
     SDL_SCANCODE_SPACE = 44, SDL_SCANCODE_RIGHT = 79, SDL_SCANCODE_LEFT = 80,
+    SDL_SCANCODE_AC_BACK = 282,              /* where Android sends a Back button */
     SDL_SCANCODE_DOWN = 81, SDL_SCANCODE_UP = 82, SDL_SCANCODE_LCTRL = 224, SDL_SCANCODE_RCTRL = 228,
     SDL_NUM_SCANCODES = 512
 } SDL_Scancode;
@@ -87,6 +88,9 @@ bool SDL_RaiseWindow(SDL_Window *);
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED "SDL_WINDOW_ACTIVATE_WHEN_RAISED"
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN "SDL_WINDOW_ACTIVATE_WHEN_SHOWN"
 #define SDL_HINT_FORCE_RAISEWINDOW "SDL_FORCE_RAISEWINDOW"
+/* Set under __ANDROID__, which the libretro core's Android targets define while still compiling
+ * against this stub rather than real SDL headers - so it has to be spelled out here too. */
+#define SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY "SDL_ANDROID_ALLOW_RECREATE_ACTIVITY"
 typedef enum { SDL_FLASH_BRIEFLY = 1 } SDL_FlashOperation;
 bool SDL_SetHint(const char *, const char *);
 bool SDL_ShowWindow(SDL_Window *);

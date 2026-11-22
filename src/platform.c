@@ -110,6 +110,13 @@ bool plat_init(const char *title)
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1");
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1");
     SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
+#ifdef __ANDROID__
+    /* Android is free to tear the activity down and build it again - a fold, a resolution change
+     * on a TV, the system reclaiming memory. SDLActivity's default answer to being re-created is
+     * System.exit(0), which from the sofa is an app that will not start. Saying yes here makes it
+     * restart the game instead, which is the behaviour a player would expect. */
+    SDL_SetHint(SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY, "1");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO)) { SDL_Log("SDL_Init failed: %s", SDL_GetError()); return false; }
     if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) pad_rescan();
     audio_ok = SDL_InitSubSystem(SDL_INIT_AUDIO);
@@ -1120,7 +1127,76 @@ bool assets_pick_dir(char *out, size_t n)
     return st.got;
 }
 
+/* A message the player will actually see.
+ *
+ * SDL has no message-box backend on Android: SDL_ShowSimpleMessageBox returns false there and
+ * puts nothing on the screen. So a build that could not find its artwork used to print a line to
+ * a log nobody reads and exit - which from the sofa is indistinguishable from the app not starting
+ * at all, and is what "it installs but it does not open" turned out to look like.
+ *
+ * Where there is a system dialog, that is still used. Where there is not, the message is drawn in
+ * the game's own frame buffer with the font built into the executable - which needs no artwork -
+ * and held until a key, a button or a tap, with a long stop so it can never hang a machine with
+ * nobody at it. */
 void plat_message(const char *title, const char *body)
 {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, title, body, g_win);
+    SDL_Log("%s: %s", title, body);          /* logcat, the terminal, wherever SDL_Log goes */
+
+    if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, title, body, g_win)) return;
+    if (!g_win || !g_ren || !g_tex) return;   /* no window to draw in: the log is all there is */
+
+    enum { C_BG = 1, C_INK = 2, C_TITLE = 3 };
+    Rgb c[256];
+    memset(c, 0, sizeof c);
+    c[C_BG]    = (Rgb){ 0x1000, 0x1800, 0x2600 };
+    c[C_INK]   = (Rgb){ 0xE800, 0xE800, 0xE800 };
+    c[C_TITLE] = (Rgb){ 0xFFFF, 0xD800, 0x3000 };
+    set_monitor_clut(c, true);
+
+    /* Wrapped by hand at the width the built-in 6-pixel font gives us. */
+    const int cols = (SCREEN_W - 80) / 6;
+    char lines[12][128];
+    int nlines = 0;
+    const char *p = body;
+    while (*p && nlines < 12) {
+        int take = 0, brk = 0;
+        while (p[take] && take < cols && take < (int)sizeof lines[0] - 1) {
+            if (p[take] == ' ') brk = take;
+            take++;
+        }
+        if (p[take] && brk) take = brk;       /* step back to a space rather than split a word */
+        memcpy(lines[nlines], p, (size_t)take);
+        lines[nlines][take] = 0;
+        nlines++;
+        p += take;
+        while (*p == ' ') p++;
+    }
+
+    Uint64 until = SDL_GetTicks() + 120000;
+    for (;;) {
+        fill_rect(0, 0, SCREEN_W, SCREEN_H, C_BG);
+        mini_text2x(40, 60, title, C_TITLE);
+        for (int i = 0; i < nlines; i++) mini_text(40, 100 + i * 12, lines[i], C_INK);
+        mini_text(40, SCREEN_H - 42, "left/right or D: what the game can see", C_TITLE);
+        mini_text(40, SCREEN_H - 30, "any other key, button or tap carries on", C_TITLE);
+        set_entries();
+        present();
+
+        /* The report is the useful half of this on a TV: it says which folders the game can
+         * actually open and why not when it cannot. Left and right reach it from a remote. */
+        if (key_down(SDL_SCANCODE_D) || key_down(SDL_SCANCODE_LEFT) ||
+            key_down(SDL_SCANCODE_RIGHT)) {
+            diag_screen();
+            set_monitor_clut(c, true);
+            wait_ms(150);
+            continue;
+        }
+        char k;
+        if (take_key(&k) || take_click_only() || pad_fire() || pad_start()) break;
+        if (key_down(SDL_SCANCODE_RETURN) || key_down(SDL_SCANCODE_ESCAPE) ||
+            key_down(SDL_SCANCODE_SPACE)  || key_down(SDL_SCANCODE_Q)) break;
+        if (SDL_GetTicks() > until) break;
+        pump();
+        wait_ms(16);
+    }
 }

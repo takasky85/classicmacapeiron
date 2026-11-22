@@ -75,18 +75,38 @@ static void read_dir(const char *path)
 /* Where to start looking. Android keeps the user's downloads in a couple of well-known places,
  * and a sideloaded build reaches them with ordinary file calls as long as the manifest asked for
  * storage; the rest are for a desktop running this as a fallback. */
-static const char *first_guess(void)
+static const char *candidates[] = {
+    "/sdcard/Download", "/storage/emulated/0/Download", "/sdcard", "/storage/emulated/0",
+    "/storage", NULL /* $HOME, filled in below */, "/"
+};
+#define N_CANDIDATES (int)(sizeof candidates / sizeof candidates[0])
+
+/* The best place we can open at this moment, and how good it is - lower is better, and
+ * N_CANDIDATES means nothing on the list would open.
+ *
+ * "At this moment" is the point of returning the rank. The storage permission is asked for while
+ * the game is starting and nothing waits on it, so the first call here often runs before it has
+ * been granted: every candidate under /sdcard fails to open and the browser would otherwise sit
+ * at "/" showing the root of an Android system, with the player's downloads unreachable and no
+ * hint as to why. Asking again as the browser runs costs an opendir and fixes that by itself the
+ * moment the permission lands. */
+int assets_candidate_count(void) { return N_CANDIDATES; }
+const char *assets_candidate(int i)
 {
-    static const char *tries[] = {
-        "/sdcard/Download", "/storage/emulated/0/Download", "/sdcard", "/storage/emulated/0",
-        "/storage", NULL, "/"
-    };
-    tries[5] = getenv("HOME");
-    for (unsigned i = 0; i < sizeof tries / sizeof tries[0]; i++) {
-        if (!tries[i]) continue;
-        DIR *d = opendir(tries[i]);
-        if (d) { closedir(d); return tries[i]; }
+    if (i < 0 || i >= N_CANDIDATES) return NULL;
+    if (i == 5) candidates[5] = getenv("HOME");
+    return candidates[i];
+}
+
+static const char *best_start(int *rank)
+{
+    candidates[5] = getenv("HOME");
+    for (int i = 0; i < N_CANDIDATES; i++) {
+        if (!candidates[i]) continue;
+        DIR *d = opendir(candidates[i]);
+        if (d) { closedir(d); if (rank) *rank = i; return candidates[i]; }
     }
+    if (rank) *rank = N_CANDIDATES;
     return "/";
 }
 
@@ -159,7 +179,7 @@ static void draw(const char *path, int sel, int top, bool here_is_it)
     mini_text(LIST_X, SCREEN_H - 30,
               "d-pad or arrows to move    A / Return opens a folder    B / Esc goes up", C_DIM);
     mini_text(LIST_X, SCREEN_H - 18,
-              "a mouse or a touch screen works too          Q gives up", C_DIM);
+              "left/right or D: what the game can see        Q gives up", C_DIM);
     set_entries();
     present();
 }
@@ -169,15 +189,36 @@ static void draw(const char *path, int sel, int top, bool here_is_it)
 bool assets_browse(char *out, size_t n)
 {
     char path[1200];
-    snprintf(path, sizeof path, "%s", first_guess());
+    int rank;
+    snprintf(path, sizeof path, "%s", best_start(&rank));
     read_dir(path);
     browse_palette();
 
     int sel = 0, top = 0;
     bool held = false;                  /* so one push of the stick moves one row */
     int repeat = 0;
+    bool moved = false;                 /* has the player navigated anywhere themselves yet? */
+    int recheck = 0;
 
     for (;;) {
+        /* Until the player goes somewhere of their own accord, keep an eye out for a better
+         * starting point than the one we could reach when we opened - which is how the storage
+         * permission being granted a second or two in gets noticed. Twice a second is plenty.
+         * Once they have moved, this stops: being yanked out of the folder you are looking at
+         * would be worse than starting in the wrong one. */
+        if (!moved && rank > 0 && ++recheck >= 30) {
+            recheck = 0;
+            int r2;
+            const char *p2 = best_start(&r2);
+            if (r2 < rank) {
+                rank = r2;
+                snprintf(path, sizeof path, "%s", p2);
+                read_dir(path);
+                sel = top = 0;
+                diag_note("apeiron: storage opened up - starting at '%s'", path);
+            }
+        }
+
         bool here = is_assets(path);
         draw(path, sel, top, here);
 
@@ -204,13 +245,22 @@ bool assets_browse(char *out, size_t n)
 
         if (key_down(SDL_SCANCODE_RETURN) || key_down(SDL_SCANCODE_KP_ENTER) || pad_fire())
             open_it = true;
-        if (key_down(SDL_SCANCODE_ESCAPE) || key_down(SDL_SCANCODE_B)) up = true;
+        /* AC_BACK is where Android sends a TV remote's and a phone's Back button, and it is the
+         * only "go up" a remote has: it has no Escape and no B. */
+        if (key_down(SDL_SCANCODE_ESCAPE) || key_down(SDL_SCANCODE_B) ||
+            key_down(SDL_SCANCODE_AC_BACK)) up = true;
         if (pad_start() || key_down(SDL_SCANCODE_SPACE)) take = true;
         bool give_up = key_down(SDL_SCANCODE_Q);
+        /* Left and right do nothing else in here, and on a TV remote they are the only spare
+         * keys there are - no Escape, no letters, no mouse. So they open the diagnostics. */
+        bool want_diag = key_down(SDL_SCANCODE_D) || key_down(SDL_SCANCODE_LEFT) ||
+                         key_down(SDL_SCANCODE_RIGHT) || px < -0.6f || px > 0.6f;
 
         int mx, my;
         if (take_click(&mx, &my)) {
-            if (here && my >= SCREEN_H - 56 && my < SCREEN_H - 38) {
+            if (my >= SCREEN_H - 24) {
+                want_diag = true;                      /* the footer line that says so */
+            } else if (here && my >= SCREEN_H - 56 && my < SCREEN_H - 38) {
                 take = true;
             } else if (my >= LIST_Y - 2) {
                 int row = (my - (LIST_Y - 2)) / ROW_H;
@@ -234,6 +284,7 @@ bool assets_browse(char *out, size_t n)
             return true;
         }
         if (open_it && sel < n_entries) {
+            moved = true;
             if (!strcmp(entries[sel].name, "..")) {
                 parent_of(path);
             } else {
@@ -251,10 +302,16 @@ bool assets_browse(char *out, size_t n)
             wait_ms(120);                       /* so one press is not read as several */
         }
         if (up) {
+            moved = true;
             parent_of(path);
             read_dir(path);
             sel = top = 0;
             wait_ms(120);
+        }
+        if (want_diag) {
+            diag_screen();
+            browse_palette();                 /* the report had the screen's colours */
+            wait_ms(150);
         }
         if (give_up) return false;
         pump();
