@@ -24,9 +24,17 @@ int main(int argc, char **argv)
      * is a request the window manager is free to ignore, and some of them do. */
     assets_load_options(dir);
 
+    /* plat_shutdown rather than return, here and everywhere below. Returning from main looks like
+     * the harmless way to give up and on Android it is the one thing that must not happen:
+     * SDLActivity records that main finished in a *static* field, and a static field outlives the
+     * activity for as long as Android keeps the process - which it does, long after the window has
+     * gone. Every later launch then takes the branch at the top of its onCreate, calls
+     * System.exit(0) and draws nothing at all. The app installs, runs once, and from then on does
+     * nothing when you pick it, which is exactly what was reported. plat_shutdown ends the process
+     * instead, so the next launch starts from a clean one. */
     if (!plat_init("Apeiron (SDL3 port)")) {
         SDL_Log("apeiron: plat_init failed - giving up");
-        return 1;
+        plat_shutdown(1);
     }
     SDL_Log("apeiron: window and renderer up");
 
@@ -45,22 +53,30 @@ int main(int argc, char **argv)
          * backend there, and the Storage Access Framework deals in content URIs rather than
          * paths, which is no use to a game that opens files with fopen - so there it goes
          * straight to the browser the game draws itself. */
-        bool got;
+        /* Asked until there is an answer. On a desktop one refusal is taken as a refusal, because
+         * there is a console to read and a shell to try again from. On a TV there is neither, so
+         * the message is shown and the browser comes back: being returned to the folder list is
+         * something a remote control can deal with, and an app that quietly disappeared is not. */
+        for (;;) {
+            bool got;
 #ifdef __ANDROID__
-        SDL_Log("apeiron: opening the built-in folder browser");
-        got = assets_browse(found, sizeof found);
+            SDL_Log("apeiron: opening the built-in folder browser");
+            got = assets_browse(found, sizeof found);
 #else
-        got = assets_pick_dir(found, sizeof found);
-        if (!got) got = assets_browse(found, sizeof found);
+            got = assets_pick_dir(found, sizeof found);
+            if (!got) got = assets_browse(found, sizeof found);
 #endif
-        SDL_Log("apeiron: browser returned %s, '%s'", got ? "a folder" : "nothing", got ? found : "");
-        if (!got || !assets_load(found)) {
+            SDL_Log("apeiron: browser returned %s, '%s'",
+                    got ? "a folder" : "nothing", got ? found : "");
+            if (got && assets_load(found)) break;
             plat_message("Apeiron needs its artwork",
                          "This build does not include the game's artwork, fonts or sounds - "
                          "they are Ambrosia Software's. Make an 'assets' folder from your own "
                          "copy of Apeiron with tools/extract_assets.py, then point the game at "
                          "it. See README.md.");
-            return 1;
+#ifndef __ANDROID__
+            plat_shutdown(1);
+#endif
         }
         dir = found;
         assets_remember_dir(dir);

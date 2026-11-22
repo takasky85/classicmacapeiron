@@ -110,6 +110,13 @@ bool plat_init(const char *title)
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1");
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1");
     SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
+#ifdef __ANDROID__
+    /* Android is free to tear the activity down and build it again - a fold, a resolution change
+     * on a TV, the system reclaiming memory. SDLActivity's default answer to being re-created is
+     * System.exit(0), which from the sofa is an app that will not start. Saying yes here makes it
+     * restart the game instead, which is the behaviour a player would expect. */
+    SDL_SetHint(SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY, "1");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO)) { SDL_Log("SDL_Init failed: %s", SDL_GetError()); return false; }
     if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) pad_rescan();
     audio_ok = SDL_InitSubSystem(SDL_INIT_AUDIO);

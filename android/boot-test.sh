@@ -65,16 +65,47 @@ else
     echo "could not take one"
 fi
 
-echo "=================================================================== verdict"
+echo "=================================================================== verdict, first launch"
+first_ok=1
 if [ -z "$pid" ]; then
     echo "FAIL: $PKG is not running 20s after being started"
-    exit 1
+    first_ok=0
+else
+    echo "process alive as pid $pid"
+    if adb logcat -d 2>/dev/null | grep -qF "$WANT"; then
+        echo "PASS: reached '$WANT'"
+    else
+        echo "FAIL: the process is alive but never reported '$WANT'"
+        first_ok=0
+    fi
 fi
-echo "process alive as pid $pid"
 
-if adb logcat -d 2>/dev/null | grep -qF "$WANT"; then
-    echo "PASS: reached '$WANT'"
-    exit 0
+# And again, without killing the process in between. This is the case that was actually
+# reported: SDLActivity keeps "main has finished" and "the activity has been created" in static
+# fields, which outlive the activity for as long as Android keeps the process around - and it
+# keeps it around long after the window is gone. Its default answer to either is System.exit(0),
+# so the second launch can draw nothing at all while the first was fine. Going to the home
+# screen and coming back is the shortest way to ask that question.
+echo "=================================================================== second launch"
+adb shell input keyevent KEYCODE_HOME
+sleep 3
+adb logcat -c
+adb shell am start -W -n "$PKG/.MainActivity" || { echo "am start failed"; exit 1; }
+sleep 12
+
+pid2=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r\n')
+adb logcat -d -v brief -s SDL:V SDLActivity:V apeiron:V AndroidRuntime:E 2>/dev/null | tail -60
+
+second_ok=1
+if [ -z "$pid2" ]; then
+    echo "FAIL: nothing running after the second launch"
+    second_ok=0
+elif adb logcat -d 2>/dev/null | grep -q "activity finished"; then
+    echo "FAIL: SDLActivity took the System.exit(0) branch on relaunch"
+    second_ok=0
+else
+    echo "PASS: still running as pid $pid2 after a relaunch"
 fi
-echo "FAIL: the process is alive but never reported '$WANT'"
+
+[ "$first_ok" = 1 ] && [ "$second_ok" = 1 ] && exit 0
 exit 1
