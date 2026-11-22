@@ -14,10 +14,10 @@ int main(int argc, char **argv)
     /* Breadcrumbs. On a desktop these go to the terminal and cost nothing; on Android they go to
      * logcat, which is the only way to see how far a build got before it gave up. An app that
      * exits during startup looks exactly like an app that never started, so each step says so. */
-    SDL_Log("apeiron: start, argc=%d", argc);
+    diag_note("apeiron: start, argc=%d", argc);
     const char *dir = argc > 1 ? argv[1] : NULL;
     if (!dir) dir = assets_find_dir(found, sizeof found);
-    SDL_Log("apeiron: artwork guess '%s'", dir ? dir : "(none)");
+    diag_note("apeiron: artwork guess '%s'", dir ? dir : "(none)");
 
     /* The saved options are read before the window exists, because whether it opens maximized has
      * to be one of the flags it is created with: asking a window that is already up to maximize
@@ -33,10 +33,14 @@ int main(int argc, char **argv)
      * nothing when you pick it, which is exactly what was reported. plat_shutdown ends the process
      * instead, so the next launch starts from a clean one. */
     if (!plat_init("Apeiron (SDL3 port)")) {
-        SDL_Log("apeiron: plat_init failed - giving up");
+        diag_note("apeiron: plat_init failed - giving up");
         plat_shutdown(1);
     }
-    SDL_Log("apeiron: window and renderer up");
+    diag_note("apeiron: window and renderer up");
+
+    /* A way in from a desktop, where there is a shell to set it from. On Android the browser's
+     * left/right reaches the same screen, which is the case it was written for. */
+    if (getenv("APEIRON_DIAG")) diag_screen();
 
     /* Asked again now that SDL is up: SDL_GetBasePath and SDL_GetPrefPath are the two candidates
      * that matter inside a .app, and neither answers before SDL_Init has run. */
@@ -48,7 +52,7 @@ int main(int argc, char **argv)
         /* Nothing where it was expected. Rather than exit with a line in a log nobody will read -
          * and a .app started from the Finder has no console at all - put up the system's folder
          * picker and take what it is given. The choice is remembered for next time. */
-        SDL_Log("no artwork in '%s' - asking", dir);
+        diag_note("no artwork in '%s' - asking", dir);
         /* The system's folder picker where there is one. Android has none - SDL has no dialog
          * backend there, and the Storage Access Framework deals in content URIs rather than
          * paths, which is no use to a game that opens files with fopen - so there it goes
@@ -60,13 +64,13 @@ int main(int argc, char **argv)
         for (;;) {
             bool got;
 #ifdef __ANDROID__
-            SDL_Log("apeiron: opening the built-in folder browser");
+            diag_note("apeiron: opening the built-in folder browser");
             got = assets_browse(found, sizeof found);
 #else
             got = assets_pick_dir(found, sizeof found);
             if (!got) got = assets_browse(found, sizeof found);
 #endif
-            SDL_Log("apeiron: browser returned %s, '%s'",
+            diag_note("apeiron: browser returned %s, '%s'",
                     got ? "a folder" : "nothing", got ? found : "");
             if (got && assets_load(found)) break;
             plat_message("Apeiron needs its artwork",

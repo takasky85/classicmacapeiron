@@ -90,6 +90,14 @@ static const char *candidates[] = {
  * at "/" showing the root of an Android system, with the player's downloads unreachable and no
  * hint as to why. Asking again as the browser runs costs an opendir and fixes that by itself the
  * moment the permission lands. */
+int assets_candidate_count(void) { return N_CANDIDATES; }
+const char *assets_candidate(int i)
+{
+    if (i < 0 || i >= N_CANDIDATES) return NULL;
+    if (i == 5) candidates[5] = getenv("HOME");
+    return candidates[i];
+}
+
 static const char *best_start(int *rank)
 {
     candidates[5] = getenv("HOME");
@@ -171,7 +179,7 @@ static void draw(const char *path, int sel, int top, bool here_is_it)
     mini_text(LIST_X, SCREEN_H - 30,
               "d-pad or arrows to move    A / Return opens a folder    B / Esc goes up", C_DIM);
     mini_text(LIST_X, SCREEN_H - 18,
-              "a mouse or a touch screen works too          Q gives up", C_DIM);
+              "left/right or D: what the game can see        Q gives up", C_DIM);
     set_entries();
     present();
 }
@@ -207,7 +215,7 @@ bool assets_browse(char *out, size_t n)
                 snprintf(path, sizeof path, "%s", p2);
                 read_dir(path);
                 sel = top = 0;
-                SDL_Log("apeiron: storage opened up - starting at '%s'", path);
+                diag_note("apeiron: storage opened up - starting at '%s'", path);
             }
         }
 
@@ -243,10 +251,16 @@ bool assets_browse(char *out, size_t n)
             key_down(SDL_SCANCODE_AC_BACK)) up = true;
         if (pad_start() || key_down(SDL_SCANCODE_SPACE)) take = true;
         bool give_up = key_down(SDL_SCANCODE_Q);
+        /* Left and right do nothing else in here, and on a TV remote they are the only spare
+         * keys there are - no Escape, no letters, no mouse. So they open the diagnostics. */
+        bool want_diag = key_down(SDL_SCANCODE_D) || key_down(SDL_SCANCODE_LEFT) ||
+                         key_down(SDL_SCANCODE_RIGHT) || px < -0.6f || px > 0.6f;
 
         int mx, my;
         if (take_click(&mx, &my)) {
-            if (here && my >= SCREEN_H - 56 && my < SCREEN_H - 38) {
+            if (my >= SCREEN_H - 24) {
+                want_diag = true;                      /* the footer line that says so */
+            } else if (here && my >= SCREEN_H - 56 && my < SCREEN_H - 38) {
                 take = true;
             } else if (my >= LIST_Y - 2) {
                 int row = (my - (LIST_Y - 2)) / ROW_H;
@@ -293,6 +307,11 @@ bool assets_browse(char *out, size_t n)
             read_dir(path);
             sel = top = 0;
             wait_ms(120);
+        }
+        if (want_diag) {
+            diag_screen();
+            browse_palette();                 /* the report had the screen's colours */
+            wait_ms(150);
         }
         if (give_up) return false;
         pump();

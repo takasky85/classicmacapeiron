@@ -1177,10 +1177,20 @@ void plat_message(const char *title, const char *body)
         fill_rect(0, 0, SCREEN_W, SCREEN_H, C_BG);
         mini_text2x(40, 60, title, C_TITLE);
         for (int i = 0; i < nlines; i++) mini_text(40, 100 + i * 12, lines[i], C_INK);
-        mini_text(40, SCREEN_H - 30, "press any key, any button, or tap the screen", C_TITLE);
+        mini_text(40, SCREEN_H - 42, "left/right or D: what the game can see", C_TITLE);
+        mini_text(40, SCREEN_H - 30, "any other key, button or tap carries on", C_TITLE);
         set_entries();
         present();
 
+        /* The report is the useful half of this on a TV: it says which folders the game can
+         * actually open and why not when it cannot. Left and right reach it from a remote. */
+        if (key_down(SDL_SCANCODE_D) || key_down(SDL_SCANCODE_LEFT) ||
+            key_down(SDL_SCANCODE_RIGHT)) {
+            diag_screen();
+            set_monitor_clut(c, true);
+            wait_ms(150);
+            continue;
+        }
         char k;
         if (take_key(&k) || take_click_only() || pad_fire() || pad_start()) break;
         if (key_down(SDL_SCANCODE_RETURN) || key_down(SDL_SCANCODE_ESCAPE) ||

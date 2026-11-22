@@ -130,6 +130,12 @@ void mini_text2x(int x, int y, const char *s, uint8_t ink);
 void mini_char(int x, int y, char c, uint8_t ink);
 int  mini_text_width(const char *s);
 bool assets_browse(char *out, size_t n);
+/* The places the game looks for its artwork, so the diagnostics screen can report on each. */
+int  assets_candidate_count(void);
+const char *assets_candidate(int i);
+/* SDL_Log plus a copy kept for the diagnostics screen, which is the only way to read it on a TV. */
+void diag_note(const char *fmt, ...);
+void diag_screen(void);
 void fill_rect(int x, int y, int w, int h, uint8_t c);
 void draw_line(int x0, int y0, int x1, int y1, uint8_t c);
 void tile_pattern(const Image *pat, int x, int y, int w, int h);

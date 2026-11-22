@@ -16,7 +16,7 @@ add_subdirectory("${SDL_DIR}" sdl)
 set(GAME "${CMAKE_CURRENT_SOURCE_DIR}/../../../src")
 add_library(main SHARED
   ${GAME}/main.c ${GAME}/platform.c ${GAME}/assets.c ${GAME}/intro.c ${GAME}/game.c
-  ${GAME}/minifont.c ${GAME}/browse.c)
+  ${GAME}/minifont.c ${GAME}/browse.c ${GAME}/diag.c)
 
 target_include_directories(main PRIVATE ${GAME})
 target_compile_definitions(main PRIVATE
