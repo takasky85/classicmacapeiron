@@ -23,3 +23,8 @@ target_compile_definitions(main PRIVATE
   APEIRON_BUILD_STAMP="${APEIRON_BUILD_STAMP}"
   APEIRON_BUILD_NAME="${APEIRON_BUILD_NAME}")
 target_link_libraries(main PRIVATE SDL3::SDL3)
+
+# Android 15 ships devices with 16KB memory pages, and a shared library laid out for 4KB pages
+# will not load on one at all - the app dies before main runs. Recent NDKs do this by default;
+# saying it here means the build does not depend on which NDK the runner happens to have.
+target_link_options(main PRIVATE "LINKER:-z,max-page-size=16384")

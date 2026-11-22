@@ -31,8 +31,15 @@ android {
             }
         }
         // 32-bit ARM is the one that matters for the older Google TV boxes; 64-bit is nearly
-        // free and is what a current phone or Chromecast would rather run.
-        ndk { abiFilters 'armeabi-v7a', 'arm64-v8a' }
+        // free and is what a current phone or Chromecast would rather run. x86_64 covers the
+        // x86 TV boxes and Chromebooks, and is what the emulator in CI can actually boot -
+        // which is the only way this build gets started before a release goes out.
+        // -PapeironAbis=x86_64 builds just the one, which is what that job does.
+        ndk {
+            abiFilters.addAll(
+                ((project.findProperty('apeironAbis') ?: 'armeabi-v7a,arm64-v8a,x86_64') as String)
+                    .split(',').collect { it.trim() }.findAll { it })
+        }
     }
 
     sourceSets {

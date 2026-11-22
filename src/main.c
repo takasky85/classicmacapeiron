@@ -11,15 +11,24 @@ int main(int argc, char **argv)
      * in turn, which on a Mac includes inside the .app, and the one that worked last time is
      * remembered. If none of them has it the game asks, once the window is up. */
     static char found[1200];
+    /* Breadcrumbs. On a desktop these go to the terminal and cost nothing; on Android they go to
+     * logcat, which is the only way to see how far a build got before it gave up. An app that
+     * exits during startup looks exactly like an app that never started, so each step says so. */
+    SDL_Log("apeiron: start, argc=%d", argc);
     const char *dir = argc > 1 ? argv[1] : NULL;
     if (!dir) dir = assets_find_dir(found, sizeof found);
+    SDL_Log("apeiron: artwork guess '%s'", dir ? dir : "(none)");
 
     /* The saved options are read before the window exists, because whether it opens maximized has
      * to be one of the flags it is created with: asking a window that is already up to maximize
      * is a request the window manager is free to ignore, and some of them do. */
     assets_load_options(dir);
 
-    if (!plat_init("Apeiron (SDL3 port)")) return 1;
+    if (!plat_init("Apeiron (SDL3 port)")) {
+        SDL_Log("apeiron: plat_init failed - giving up");
+        return 1;
+    }
+    SDL_Log("apeiron: window and renderer up");
 
     /* Asked again now that SDL is up: SDL_GetBasePath and SDL_GetPrefPath are the two candidates
      * that matter inside a .app, and neither answers before SDL_Init has run. */
@@ -38,11 +47,13 @@ int main(int argc, char **argv)
          * straight to the browser the game draws itself. */
         bool got;
 #ifdef __ANDROID__
+        SDL_Log("apeiron: opening the built-in folder browser");
         got = assets_browse(found, sizeof found);
 #else
         got = assets_pick_dir(found, sizeof found);
         if (!got) got = assets_browse(found, sizeof found);
 #endif
+        SDL_Log("apeiron: browser returned %s, '%s'", got ? "a folder" : "nothing", got ? found : "");
         if (!got || !assets_load(found)) {
             plat_message("Apeiron needs its artwork",
                          "This build does not include the game's artwork, fonts or sounds - "
