@@ -24,13 +24,17 @@ if [ -z "$apk" ]; then
 fi
 echo "installing $apk"
 
-adb wait-for-device
+timeout 120 adb wait-for-device
 # -g grants the runtime permissions up front. The game asks for storage itself, but nobody is
 # here to tap "allow", and what is being tested is the startup path rather than the dialog.
-adb install -r -g "$apk" || { echo "install failed"; exit 1; }
+timeout 180 adb install -r -g "$apk" || { echo "install failed"; exit 1; }
 
 adb logcat -c
-adb shell am start -W -n "$PKG/.MainActivity" || { echo "am start failed"; exit 1; }
+# Not "am start -W": that waits for the activity to report itself idle, and a game that
+# redraws every frame at vsync never does - it sat there for 24 minutes and took the whole job
+# down with it. Plain am start returns as soon as the intent is delivered, and what happens
+# next is what the logcat and the pid check below are for.
+timeout 60 adb shell am start -n "$PKG/.MainActivity" || { echo "am start failed"; exit 1; }
 
 # Long enough for the game to open its window and draw the folder browser, or to die trying.
 sleep 20
@@ -90,7 +94,7 @@ echo "=================================================================== second
 adb shell input keyevent KEYCODE_HOME
 sleep 3
 adb logcat -c
-adb shell am start -W -n "$PKG/.MainActivity" || { echo "am start failed"; exit 1; }
+timeout 60 adb shell am start -n "$PKG/.MainActivity" || { echo "am start failed"; exit 1; }
 sleep 12
 
 pid2=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r\n')
