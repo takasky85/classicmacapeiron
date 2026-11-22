@@ -21,3 +21,7 @@ __pycache__/
 *.pyc
 .DS_Store
 build-libretro/
+android/SDL/
+android/.gradle/
+android/app/build/
+android/build/

@@ -50,7 +50,8 @@ endif()
 message(STATUS "apeiron: build ${APEIRON_BUILD_NAME} ${APEIRON_BUILD_STAMP}")
 
 # ------------------------------------------------------------------------------------- the game
-set(APEIRON_SOURCES src/main.c src/platform.c src/assets.c src/intro.c src/game.c)
+set(APEIRON_SOURCES src/main.c src/platform.c src/assets.c src/intro.c src/game.c
+                    src/minifont.c src/browse.c)
 
 # The Windows executable's icon. MSVC and MinGW both compile a .rc listed as a source; it is an
 # original drawing (tools/make_icons.py), not anything out of the game's own resource fork.
