@@ -1820,12 +1820,23 @@ static void tally_pickups(void)
 /* The demo's hand on the mouse. It picks a point to be at and gives back the pixel movement
  * towards it, with a little momentum, so the shooter drifts and overshoots the way a hand does
  * rather than stepping along the axes. */
+/* The demo's finger: bursts and gaps of random length, not a held trigger. */
+static bool demo_trigger(void)
+{
+    static long until;
+    static bool on = true;
+    if (ticks > until) {
+        on = !on;
+        until = ticks + (on ? 8 + rnd(50) : 3 + rnd(24));
+    }
+    return on;
+}
+
 static void demo_move(float *mx, float *my)
 {
     static float vx, vy;
     static float reach_sx, reach_sy, reach_gx, reach_gy, reach_t, reach_dur = 1.0f;
-    static float wander_y;
-    static long  reach_hold, wander_at;
+    static long  reach_hold;
     int ix = FIX_WHOLE(px), iy = FIX_WHOLE(py);
     float wantx = (float)ix, wanty = (float)(SHOOTER_YMAX - 8);
     int best = 1 << 30, coin = 1 << 30, flee = 0;
@@ -1851,17 +1862,30 @@ static void demo_move(float *mx, float *my)
         default: break;
         }
     }
-    if (flee) wantx = (float)ix + flee * 70.0f;
-
-    /* Nobody parks on the bottom edge for a whole wave. With nothing to chase, the hand wanders
-     * slowly through the band the shooter is allowed, which is 96 pixels tall. */
-    if (coin == 1 << 30 && !flee) {
-        if (ticks > wander_at) {
-            wander_at = ticks + 90 + rnd(150);
-            wander_y = (float)(SHOOTER_TOP + rnd(SHOOTER_YMAX - SHOOTER_TOP));
-        }
-        wanty = wander_y;
+    /* Attract mode is only there to be looked at, so it does not have to make sense: the hand
+     * hops about - left, right, up, down, a long sweep, a short twitch - and now and then goes
+     * for a coin or ducks a creature, which is enough to keep it alive for a while. Every few
+     * moments it picks something new at random and the reach machinery below carries it there. */
+    static long pick_at;
+    static float pick_x, pick_y;
+    if (flee) {
+        wantx = (float)ix + flee * 70.0f;                     /* ducking cannot wait */
+        pick_at = 0;
+    } else if (ticks > pick_at) {
+        pick_at = ticks + 6 + rnd(28);
+        int roll = rnd(10);
+        float fieldx = (float)rnd(FIELD_W - 16);
+        float bandy  = (float)(SHOOTER_TOP + rnd(SHOOTER_YMAX - SHOOTER_TOP));
+        if (coin != 1 << 30 && roll < 3) { pick_x = wantx; pick_y = wanty; }          /* a coin */
+        else if (best != 1 << 30 && roll < 5) { pick_x = wantx; pick_y = (float)iy; } /* line up */
+        else if (roll < 7) { pick_x = fieldx; pick_y = bandy; }                       /* anywhere */
+        else if (roll < 8) { pick_x = fieldx; pick_y = (float)iy; }                   /* sweep sideways */
+        else if (roll < 9) { pick_x = (float)ix; pick_y = bandy; }                    /* up or down */
+        else { pick_x = (float)ix + (float)(rnd(81) - 40); pick_y = (float)iy + (float)(rnd(41) - 20); }
     }
+    if (!flee) { wantx = pick_x; wanty = pick_y; }
+    if (wanty < SHOOTER_TOP) wanty = (float)SHOOTER_TOP;
+    if (wanty > SHOOTER_YMAX) wanty = (float)SHOOTER_YMAX;
     if (wantx < 0) wantx = 0;
     if (wantx > FIELD_W - 16) wantx = FIELD_W - 16;
 
@@ -1879,10 +1903,10 @@ static void demo_move(float *mx, float *my)
         reach_sx = (float)ix; reach_sy = (float)iy;
         reach_gx = wantx;     reach_gy = wanty;
         float d = fabsf(wantx - ix) + fabsf(wanty - iy);
-        reach_dur = 4.0f + d * 0.055f;                 /* further is slower, as a hand is */
+        reach_dur = 3.0f + d * 0.04f;                  /* further is slower, as a hand is */
         if (flee) reach_dur *= 0.45f;                  /* except when getting out of the way */
         reach_t = 0.0f;
-        reach_hold = ticks + 3 + rnd(flee ? 2 : 14);   /* the pause after arriving */
+        reach_hold = ticks + 1 + rnd(flee ? 2 : 8);    /* the pause after arriving */
     } else if (stale && flee) {
         reach_gx = wantx; reach_gy = wanty;            /* a dodge redirects a reach in flight */
     }
@@ -2171,7 +2195,7 @@ static bool game_loop(void)
                         }
                 sfx(SND_EXPLOSION);
             }
-            if (demo_mode || pad_fire() || key_down(SDL_SCANCODE_SPACE) ||
+            if ((demo_mode && demo_trigger()) || (!demo_mode && (pad_fire() || key_down(SDL_SCANCODE_SPACE))) ||
                 key_down(SDL_SCANCODE_LCTRL) || key_down(SDL_SCANCODE_RCTRL) ||
                 (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) || mouse_fire())
                 fire_shot();
