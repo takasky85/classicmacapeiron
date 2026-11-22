@@ -4,5 +4,8 @@ Pix Chicago, a freeware pixel revival of Chicago - the bitmap system typeface Su
 for the first Macintosh in 1984 - by the French designer Etienne Desclides (also credited on some
 font archives as d-Sign). Free for personal use, and included here with this attribution.
 
-It is used only when Apple's own Chicago font is not supplied: tools/extract_assets.py draws it
+Geneva9.1.otf is "Geneva 9.1" by Kelsey Higham, under the SIL Open Font License 1.1 (see
+Geneva9.1-OFL.txt, which must stay with it).
+
+Both are used only when Apple's own Chicago font is not supplied: tools/extract_assets.py draws it
 at its own pixel size into the game's font format.

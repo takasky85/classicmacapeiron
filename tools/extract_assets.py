@@ -793,7 +793,7 @@ def find_fonts(search_dirs, game_dir, keep):
                     break
             if name in found:
                 break
-    # Failing the real font, a free pixel font that looks like it: a .ttf with the name in it
+    # Failing the real font, a free pixel font that looks like it: a .ttf or .otf with the name in it
     # (pixChicago.ttf, or what a download of it is called). The Geneva stand-in may be called Geneve.
     ttf_dirs = search_dirs + [os.path.join(d, 'source_fonts') for d in search_dirs] + [os.path.join(HERE, 'fonts')]
     for slot, words in (('Chicago', ('chicago',)), ('Geneva', ('geneva', 'geneve'))):
@@ -802,7 +802,7 @@ def find_fonts(search_dirs, game_dir, keep):
         for d in ttf_dirs:
             try:
                 ttfs = sorted(f for f in os.listdir(d)
-                              if f.lower().endswith('.ttf') and any(w in f.lower() for w in words))
+                              if f.lower().endswith(('.ttf', '.otf')) and any(w in f.lower() for w in words))
             except OSError:
                 continue
             if ttfs:

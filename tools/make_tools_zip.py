@@ -15,7 +15,8 @@ OUT = os.path.join(ROOT, 'downloads', 'apeiron-asset-tools.zip')
 STAMP = (2026, 1, 1, 0, 0, 0)          # fixed, so the same input always gives the same bytes
 
 PY_FILES = ['extract_assets.py', 'rsrc.py', 'pict.py', 'unpack_macbinary.py']
-FONT_FILES = [('fonts/pixChicago.ttf', 'pixChicago.ttf'), ('fonts/ATTRIBUTION.txt', 'FONT-ATTRIBUTION.txt')]
+FONT_FILES = [('fonts/pixChicago.ttf', 'pixChicago.ttf'), ('fonts/Geneva9.1.otf', 'Geneva9.1.otf'),
+              ('fonts/Geneva9.1-OFL.txt', 'Geneva9.1-OFL.txt'), ('fonts/ATTRIBUTION.txt', 'FONT-ATTRIBUTION.txt')]
 
 README = """Apeiron asset tools
 ===================
@@ -27,11 +28,10 @@ What you need
   * Apeiron_1.0.3.zip (the Mac game, as you downloaded it)
   * Python 3 and Pillow. On Windows, install Python from python.org (tick "Add to PATH"); the
     .bat file below installs Pillow for you.
-  * Fonts are optional; without them the extractor still works and tells you what it used instead.
-      - pixChicago.ttf (in this zip - a free pixel font by Etienne Desclides, see
-        FONT-ATTRIBUTION.txt) is used for the dialogs' Chicago text.
-      - Geneva.zip / Chicago.zip (Apple's fonts, from a Mac): used when present, and they win.
-      - Anything missing is replaced by the game's own New York font.
+  * Fonts are optional, and free stand-ins are in this zip: pixChicago.ttf (Etienne Desclides)
+    for Chicago and Geneva9.1.otf (Kelsey Higham, SIL Open Font License) for Geneva. See
+    FONT-ATTRIBUTION.txt. The Apple fonts are not needed.
+      - Geneva.zip / Chicago.zip (Apple's fonts, from a Mac): used instead when present.
 
 How to use it
   Windows:  unzip this, then drag Apeiron_1.0.3.zip onto "Extract Apeiron Assets.bat".
@@ -42,8 +42,8 @@ The result is a folder called apeiron_classic_assets, written next to the game z
   Windows: put it beside apeiron.exe.
   Google TV / Android: put it in the Download folder.
 
-To get the real Geneva and Chicago fonts, keep Geneva.zip and Chicago.zip in the same folder as
-the game zip (or in Downloads) and run it again. It finds them by itself.
+For the exact original fonts, keep Geneva.zip and Chicago.zip in the same folder as the game zip
+(or in Downloads) and run it again. It finds them by itself.
 
 If something goes wrong, copy the whole message in the window and send it on.
 """
