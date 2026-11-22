@@ -115,7 +115,7 @@ else()
   message(STATUS
     "apeiron: no assets/ directory yet - the game will need one to run.\n"
     "   Extract it from your own copy of Apeiron:\n"
-    "     python3 tools/extract_assets.py <the installed game folder> assets\n"
+    "     python3 tools/extract_assets.py Apeiron_1_0_3.zip\n"
     "   then build again, or pass the path at runtime: ./apeiron path/to/assets")
 endif()
 

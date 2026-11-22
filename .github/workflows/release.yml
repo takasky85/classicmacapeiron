@@ -101,9 +101,10 @@ jobs:
           Software's, and they live in the game's own resource forks - so you make them from your
           own copy of Apeiron rather than downloading them from here:
 
-              python3 tools/extract_assets.py <the installed Apeiron folder> assets
+              python3 tools/extract_assets.py Apeiron_1_0_3.zip
 
-          Put the resulting "assets" folder beside apeiron.exe, or pass its path:
+          Keep Geneva.zip and Chicago.zip (Apple's fonts, from a Mac) beside the game's zip.
+          Put the resulting "apeiron_classic_assets" folder beside apeiron.exe, or pass its path:
 
               apeiron.exe C:\some\where\assets
 
@@ -195,9 +196,10 @@ jobs:
           The artwork is NOT in here. It is Ambrosia Software's, and this port reads it out of
           the game's own resource forks rather than shipping copies. Make it from your own copy:
 
-              python3 tools/extract_assets.py <the installed Apeiron folder> assets
+              python3 tools/extract_assets.py Apeiron_1_0_3.zip
 
-          Put that "assets" folder in the device's Download folder. The first time the game
+          Keep Geneva.zip and Chicago.zip (Apple's fonts, from a Mac) beside the game's zip, and
+          put the resulting "apeiron_classic_assets" folder in the device's Download folder. The first time the game
           starts it opens a Settings page for "All files access" - turn it on for Apeiron and go
           Back - and then looks in Download by itself. (Android 6 to 10 asks a plain permission
           question instead.) If the artwork is somewhere else, the game shows a folder browser
@@ -264,8 +266,8 @@ jobs:
             from your own copy of Apeiron:
 
             ```
-            python3 tools/extract_assets.py <the installed Apeiron folder> assets
+            python3 tools/extract_assets.py Apeiron_1_0_3.zip
             ```
 
-            Put the `assets` folder beside the executable (Android: in the Download folder), or pass its path as the first argument on Windows.
+            Put the `apeiron_classic_assets` folder (with Geneva.zip and Chicago.zip beside the game zip when you run the script) beside the executable (Android: in the Download folder), or pass its path as the first argument on Windows.
             Without it the game stops at startup and says `missing assets`.

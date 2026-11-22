@@ -345,32 +345,43 @@ void assets_remember_dir(const char *dir)
     fclose(f);
 }
 
+/* The two names the folder goes by: what tools/extract_assets.py makes now, and what it used to. */
+static const char *const LEAF[] = { "apeiron_classic_assets", "assets" };
+
 const char *assets_find_dir(char *out, size_t n)
 {
     const char *base = SDL_GetBasePath();         /* inside a .app this is Contents/Resources/ */
-    const char *tries[12];
-    char b1[1200], b2[1200], b3[1200], remembered[1200];
-    int t = 0;
-    tries[t++] = "assets";                        /* beside whatever launched us */
-    if (base) {
-        snprintf(b1, sizeof b1, "%sassets", base);            tries[t++] = b1;
-        snprintf(b2, sizeof b2, "%s../Resources/assets", base); tries[t++] = b2;
-        snprintf(b3, sizeof b3, "%s../../../assets", base);   tries[t++] = b3;  /* beside the .app */
-    }
+    const char *tries[48];
+    static char store[40][1200];
+    int t = 0, ns = 0;
+    char remembered[1200];
+#define ADDP(...) do { if (t < 46 && ns < 40) { snprintf(store[ns], sizeof store[0], __VA_ARGS__); \
+                                               tries[t++] = store[ns++]; } } while (0)
 #ifdef __ANDROID__
-    /* Three places the artwork can be on a TV, nearest the player first. The app's own folders
-     * need no permission, so a folder put there with adb is found with nothing asked or granted;
-     * Download is what a person with a file manager or the Downloader app will have used, and it
-     * is readable only once the storage permission has been given - which is why this is asked
-     * again after it is, not once before the window exists. */
-    char and1[1200], and2[1200];
     const char *ext = SDL_GetAndroidExternalStoragePath();
     const char *inr = SDL_GetAndroidInternalStoragePath();
-    if (ext && *ext) { snprintf(and1, sizeof and1, "%s/assets", ext); tries[t++] = and1; }
-    if (inr && *inr) { snprintf(and2, sizeof and2, "%s/assets", inr); tries[t++] = and2; }
-    tries[t++] = "/sdcard/Download/assets";
-    tries[t++] = "/storage/emulated/0/Download/assets";
 #endif
+    for (int l = 0; l < (int)(sizeof LEAF / sizeof LEAF[0]); l++) {
+        const char *leaf = LEAF[l];
+        ADDP("%s", leaf);                                        /* beside whatever launched us */
+        if (base) {
+            ADDP("%s%s", base, leaf);
+            ADDP("%s../Resources/%s", base, leaf);
+            ADDP("%s../../../%s", base, leaf);                   /* beside the .app */
+        }
+#ifdef __ANDROID__
+        /* Places the artwork can be on a TV, nearest the player first. The app's own folders need
+         * no permission, so a folder put there with adb is found with nothing asked or granted;
+         * Download is what a person with a file manager or the Downloader app will have used, and
+         * it is readable only once the storage permission has been given - which is why this is
+         * asked again after it is, not once before the window exists. */
+        if (ext && *ext) ADDP("%s/%s", ext, leaf);
+        if (inr && *inr) ADDP("%s/%s", inr, leaf);
+        ADDP("/sdcard/Download/%s", leaf);
+        ADDP("/storage/emulated/0/Download/%s", leaf);
+#endif
+    }
+#undef ADDP
     char pf[1200];
     pointer_file(pf, sizeof pf);
     remembered[0] = 0;

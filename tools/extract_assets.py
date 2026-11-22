@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Extract the assets the Apeiron startup/title sequence needs, in SDL3-friendly formats.
 
-usage: extract_assets.py <game_dir> <out_dir>
-  game_dir = the unzipped Apeiron folder (holds 'Apeiron Titles', 'Apeiron Scores', ... and the hidden
-             .rsrc/ folder with their resource forks)
+usage: extract_assets.py <the game's .zip | its folder | a MacBinary file> [out_dir]
+  A .zip is unpacked for you, into a temporary folder that is removed afterwards. Whatever you give it,
+  the result goes in out_dir, which is "apeiron_classic_assets" beside the input if you leave it out.
+  The folder, once unpacked, is the Apeiron one: 'Apeiron Titles', 'Apeiron Scores', ... and the hidden
+  .rsrc/ folder with their resource forks.
 Needs Pillow (pip install pillow). Fonts come from source_fonts/ (resource forks of the Mac font suitcases)
 and from the game's own embedded New York bitmaps.
 """
-import os, struct, sys, wave, collections, tempfile
+import os, struct, sys, wave, collections, tempfile, zipfile, shutil, stat
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import rsrc, pict, unpack_macbinary
@@ -455,7 +457,7 @@ def extract_packs(game, out, game_clut):
                         except Exception: pass
             print(f'  pack {name}: {n} sounds')
 
-def main(game, out):
+def main(game, out, fonts):
     os.makedirs(out, exist_ok=True)
     res = lambda f: {(t, i): d for t, i, n, a, d in rsrc.parse(f)}
     gres = lambda f: res(os.path.join(game, '.rsrc', f))
@@ -496,8 +498,8 @@ def main(game, out):
     ny = {14: 1067, 18: 32121, 24: 28514}
     for size, nid in ny.items():
         print(f'font_newyork{size}', nfnt_to_font(app[('NFNT', nid)], f'{out}/font_newyork{size}'))
-    gen = res(os.path.join(HERE, '..', 'source_fonts', 'Geneva.rsrc'))
-    chi = res(os.path.join(HERE, '..', 'source_fonts', 'Chicago.rsrc'))
+    gen = res(fonts['Geneva'])
+    chi = res(fonts['Chicago'])
     print('font_geneva9 ', nfnt_to_font(gen[('NFNT', 3130)], f'{out}/font_geneva9'))
     print('font_chicago12', nfnt_to_font(chi[('NFNT', 1025)], f'{out}/font_chicago12'))
 
@@ -560,30 +562,85 @@ def macbinary_name(path):
             h[69:73].decode('mac_roman', 'replace'))
 
 
+def _rmtree(path):
+    """Remove a folder tree, including the read-only files Windows will not otherwise let go of."""
+    def onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+    shutil.rmtree(path, onerror=onerror)
+
+
+def unzip_game(zpath):
+    """Unpack the game's zip into a fresh temporary folder and return (folder, folder-to-remove).
+
+    ZipFile.extract already turns characters Windows cannot have in a file name into underscores -
+    the Mac's 'Icon' file ends in a carriage return - but a name that still cannot be created is
+    skipped with a warning rather than stopping everything: the files that matter are the ones in
+    .rsrc/, and one stray file must not cost the whole run.
+    """
+    tmp = tempfile.mkdtemp(prefix='apeiron-zip-')
+    skipped = 0
+    try:
+        with zipfile.ZipFile(zpath) as z:
+            for m in z.infolist():
+                try:
+                    z.extract(m, tmp)
+                except (OSError, ValueError) as e:
+                    skipped += 1
+                    print("  skipped %r (%s)" % (m.filename, e))
+    except zipfile.BadZipFile:
+        _rmtree(tmp)
+        sys.exit("'%s' is not a zip file I can read" % zpath)
+    if skipped:
+        print('  %d entries could not be unpacked; carrying on with the rest' % skipped)
+    # The game's folder is the shallowest one that has a .rsrc/ in it - the zip may hold it at the
+    # top or inside a folder of its own.
+    best = None
+    for root, dirs, _files in os.walk(tmp):
+        if '.rsrc' in dirs:
+            best = root
+            break
+    if best is None:
+        best = tmp          # no .rsrc/ anywhere: maybe it is a zip of MacBinary files
+    print('unpacked %s' % zpath)
+    return best, tmp
+
+
 def prepare(src):
     """Whatever the user has, hand main() a folder in the layout it wants: the game's files beside
     a .rsrc/ directory holding their resource forks.
 
     A folder already in that shape is used as it stands. A single MacBinary file is split into both
     forks. A folder of MacBinary files - which is what a download of the game unpacks to - is split
-    file by file into one working folder.
+    file by file into one working folder. A .zip is unpacked first and then treated as the folder.
+
+    Returns (folder, [temporary folders to remove when finished]).
     """
+    if os.path.isfile(src) and zipfile.is_zipfile(src):
+        folder, tmp = unzip_game(src)
+        got, more = prepare(folder)
+        return got, [tmp] + more
+
     if os.path.isdir(src):
         if os.path.isdir(os.path.join(src, '.rsrc')):
-            return src
+            return src, []
         bins = [f for f in sorted(os.listdir(src)) if macbinary_name(os.path.join(src, f))]
         if not bins:
             sys.exit("'%s' has neither a .rsrc/ directory nor any MacBinary files in it" % src)
-        out = os.path.join(tempfile.mkdtemp(prefix='apeiron-'), 'game')
+        work = tempfile.mkdtemp(prefix='apeiron-')
+        out = os.path.join(work, 'game')
         os.makedirs(out, exist_ok=True)
         for f in bins:
             unpack_macbinary.split(os.path.join(src, f), out)
-        print('unpacked %d MacBinary files into %s' % (len(bins), out))
-        return out
+        print('unpacked %d MacBinary files' % len(bins))
+        return out, [work]
 
     info = macbinary_name(src)
     if not info:
-        sys.exit("'%s' is not a folder and not a MacBinary file" % src)
+        sys.exit("'%s' is not a folder, a zip file or a MacBinary file" % src)
     if info[1:3] == ('APPL', 'VIS3'):
         sys.exit(
             "'%s' is the Installer VISE 3 installer, not the game itself.\n"
@@ -596,14 +653,121 @@ def prepare(src):
             "\n"
             "Run the installer once under SheepShaver or Basilisk II and point this script at the\n"
             "folder it installs, or at a folder of MacBinary files." % src)
-    out = os.path.join(tempfile.mkdtemp(prefix='apeiron-'), 'game')
+    work = tempfile.mkdtemp(prefix='apeiron-')
+    out = os.path.join(work, 'game')
     os.makedirs(out, exist_ok=True)
     name = unpack_macbinary.split(src, out)
-    print('unpacked %s into %s' % (name, out))
-    return out
+    print('unpacked %s' % name)
+    return out, [work]
+
+
+# ------------------------------------------------------------------------------------- the fonts
+# Geneva and Chicago are the two Mac system fonts the game draws its dialogs in. They are not in the
+# game's own files (New York is, which is why it is not on this list) and they are Apple's, so they
+# are not in this repository either: they come from the font suitcases of a Mac - the Geneva.zip and
+# Chicago.zip that a Mac archive of the fonts produces, each holding .rsrc/<name>.
+FONT_NAMES = ('Geneva', 'Chicago')
+
+
+def _font_from_zip(zpath, name, keep):
+    """The resource fork of `name` out of a zip that has it as .rsrc/<name>, written to a file in
+    the `keep` folder; None if this zip is not that."""
+    try:
+        with zipfile.ZipFile(zpath) as z:
+            for m in z.infolist():
+                parts = m.filename.replace('\\', '/').split('/')
+                if len(parts) >= 2 and parts[-2] == '.rsrc' and parts[-1] == name and not m.is_dir():
+                    dest = os.path.join(keep, name + '.rsrc')
+                    with z.open(m) as src, open(dest, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+                    return dest
+    except (zipfile.BadZipFile, OSError):
+        pass
+    return None
+
+
+def find_fonts(search_dirs, game_dir, keep):
+    """Find Geneva and Chicago. Looked for, in each folder given and in the unpacked game itself:
+    source_fonts/<name>.rsrc, <name>.rsrc, <name>/.rsrc/<name>, .rsrc/<name>, and any zip whose
+    name has the font's name in it (1794536557284_Geneva.zip is what a download is called)."""
+    found = {}
+    for name in FONT_NAMES:
+        cands = []
+        for d in search_dirs:
+            cands += [os.path.join(d, 'source_fonts', name + '.rsrc'), os.path.join(d, name + '.rsrc'),
+                      os.path.join(d, name, '.rsrc', name), os.path.join(d, '.rsrc', name),
+                      os.path.join(d, 'source_fonts', name, '.rsrc', name)]
+        for c in cands:
+            if os.path.isfile(c):
+                found[name] = c
+                break
+        if name in found:
+            continue
+        for root, _dirs, files in os.walk(game_dir):              # fonts packed beside the game
+            if os.path.basename(root) == '.rsrc' and name in files:
+                found[name] = os.path.join(root, name)
+                break
+        if name in found:
+            continue
+        for d in search_dirs:
+            try:
+                zips = sorted(f for f in os.listdir(d)
+                              if f.lower().endswith('.zip') and name.lower() in f.lower())
+            except OSError:
+                continue
+            for f in zips:
+                got = _font_from_zip(os.path.join(d, f), name, keep)
+                if got:
+                    found[name] = got
+                    break
+            if name in found:
+                break
+    missing = [n for n in FONT_NAMES if n not in found]
+    if missing:
+        sys.exit(
+            "\nCannot find the %s font%s the game needs for its dialogs.\n"
+            "\n"
+            "They are Apple's, so they are not in this repository, and they are not in the game's\n"
+            "zip. Put %s in the same folder as the game's zip and run this again. (Each is the\n"
+            "zip you get from a Mac, holding .rsrc/<font name>. A folder called source_fonts next\n"
+            "to the tools folder, with Geneva.rsrc and Chicago.rsrc in it, works too.)"
+            % (' and '.join(missing), 's' if len(missing) > 1 else '',
+               ' and '.join(n + '.zip' for n in missing)))
+    for n in FONT_NAMES:
+        print('font file for %-8s %s' % (n, found[n]))
+    return found
+
+
+DEFAULT_OUT = 'apeiron_classic_assets'
+
+
+def default_out_for(src):
+    """The output folder when none is named: beside the input, so it is where you are looking."""
+    parent = os.path.dirname(os.path.abspath(src.rstrip('/\\')))
+    return os.path.join(parent, DEFAULT_OUT)
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        sys.exit('usage: extract_assets.py <game folder | MacBinary file | folder of them> <out>')
-    main(prepare(sys.argv[1]), sys.argv[2])
+    if len(sys.argv) not in (2, 3):
+        sys.exit('usage: extract_assets.py <the game\'s .zip | its folder | a MacBinary file> [out_dir]\n'
+                 '       out_dir defaults to "%s" beside the input' % DEFAULT_OUT)
+    src = sys.argv[1]
+    if not os.path.exists(src):
+        sys.exit("'%s' does not exist" % src)
+    out = sys.argv[2] if len(sys.argv) == 3 else default_out_for(src)
+    game, temps = prepare(src)
+    try:
+        here = os.path.dirname(os.path.abspath(src.rstrip('/\\')))
+        keep = tempfile.mkdtemp(prefix='apeiron-fonts-')
+        temps.append(keep)
+        fonts = find_fonts([here, os.path.join(HERE, '..'), os.getcwd()], game, keep)
+        main(game, out, fonts)
+    except PermissionError as e:
+        sys.exit("\nPermission denied: %s\n"
+                 "Either this file or folder is open in another program, or the output folder (%s) is\n"
+                 "somewhere this account may not write. Pass a different out_dir as the second argument."
+                 % (e.filename or e, out))
+    finally:
+        for t in temps:
+            _rmtree(t)
+    print('\nDone: %s' % os.path.abspath(out))

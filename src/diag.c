@@ -141,7 +141,7 @@ static void build_report(void)
     row("  read Download folder  %s", droid_storage_state());
     probe("app folder (no permission)", SDL_GetAndroidExternalStoragePath());
     const char *ext = SDL_GetAndroidExternalStoragePath();
-    if (ext) row("    put the artwork in %s/assets", ext);
+    if (ext) row("    put the artwork in %s/apeiron_classic_assets", ext);
     probe("app private folder", SDL_GetAndroidInternalStoragePath());
 #endif
 
@@ -151,6 +151,7 @@ static void build_report(void)
         const char *p = assets_candidate(i);
         if (p) probe(p, p);
     }
+    probe("beside the game", "apeiron_classic_assets");
     probe("beside the game", "assets");
 }
 

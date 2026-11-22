@@ -14,7 +14,14 @@ Throughout the source, names in `[brackets]` are the functions in the decompiled
 of the game's own resource forks, so a clone starts without it and you make it from your own copy of
 Apeiron. Nothing builds or runs until you have:
 
-    python3 tools/extract_assets.py <the installed game folder> assets
+    python3 tools/extract_assets.py Apeiron_1_0_3.zip
+
+That unpacks the zip, converts what is in it and writes a folder called `apeiron_classic_assets`
+beside the zip (give a second argument to put it somewhere else). The game also needs Apple's
+Geneva and Chicago fonts, which are not in the game's files or in this repository: put the
+`Geneva.zip` and `Chicago.zip` you get from a Mac in the same folder as the game's zip. The game
+looks for `apeiron_classic_assets` (or the older name, `assets`) beside the executable, or in
+Download on Android; a path on the command line works anywhere.
 
 The build itself needs SDL3 3.2 or newer:
 
@@ -34,9 +41,12 @@ needs neither SDL3 nor a window; see [tools/test/README.md](tools/test/README.md
 
 `tools/extract_assets.py` takes whichever of these you have and does the rest itself:
 
-    python3 tools/extract_assets.py <the installed game folder> assets
-    python3 tools/extract_assets.py <a MacBinary .bin of one file> assets
-    python3 tools/extract_assets.py <a folder of MacBinary files> assets
+    python3 tools/extract_assets.py Apeiron_1_0_3.zip
+    python3 tools/extract_assets.py <a MacBinary .bin of one file>
+    python3 tools/extract_assets.py <a folder of MacBinary files>
+
+The output is a folder called `apeiron_classic_assets`, written beside the input; add a second
+argument to put it somewhere else.
 
 A folder already holding a `.rsrc/` directory is used as it stands; anything else is split into its
 data and resource forks first, into a working folder of its own. The one thing it cannot open is
@@ -207,9 +217,9 @@ than standing, so switching them on binds them to **M** and **N** during play.
 
 `tools/extract_assets.py` regenerates everything from the unzipped game folder (needs Pillow):
 
-    python tools/extract_assets.py <unzipped Apeiron folder> assets
+    python tools/extract_assets.py Apeiron_1_0_3.zip
 
-`<unzipped Apeiron folder>` is the one holding `Apeiron Titles`, `Apeiron Sounds` and the hidden
+Or point it at an already unzipped folder instead of the zip. That folder is the one holding `Apeiron Titles`, `Apeiron Sounds` and the hidden
 `.rsrc/` folder of resource forks.
 
 | | |
