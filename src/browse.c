@@ -62,7 +62,12 @@ static void read_dir(const char *path)
         struct stat st;
         bool dir = false;
         if (!stat(full, &st)) dir = S_ISDIR(st.st_mode);
+#ifdef DT_DIR
+        /* stat refused - no permission to stat it, a broken symlink - but the directory entry
+         * itself may still say what it is. Not everywhere has this: MinGW's struct dirent has no
+         * d_type at all, which is why it is asked for rather than assumed. */
         else if (e->d_type == DT_DIR) dir = true;
+#endif
         if (!dir) continue;                      /* only folders are worth showing */
         snprintf(entries[n_entries].name, sizeof entries[0].name, "%s", e->d_name);
         entries[n_entries].is_dir = true;
