@@ -204,7 +204,10 @@ bool assets_browse(char *out, size_t n)
 
         if (key_down(SDL_SCANCODE_RETURN) || key_down(SDL_SCANCODE_KP_ENTER) || pad_fire())
             open_it = true;
-        if (key_down(SDL_SCANCODE_ESCAPE) || key_down(SDL_SCANCODE_B)) up = true;
+        /* AC_BACK is where Android sends a TV remote's and a phone's Back button, and it is the
+         * only "go up" a remote has: it has no Escape and no B. */
+        if (key_down(SDL_SCANCODE_ESCAPE) || key_down(SDL_SCANCODE_B) ||
+            key_down(SDL_SCANCODE_AC_BACK)) up = true;
         if (pad_start() || key_down(SDL_SCANCODE_SPACE)) take = true;
         bool give_up = key_down(SDL_SCANCODE_Q);
 
