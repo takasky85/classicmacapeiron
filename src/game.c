@@ -2339,14 +2339,28 @@ static void enter_high_score(int slot, const Image *bg)
 
     const int BW = 349, BH = 116;
     int bx = (SCREEN_W - BW) / 2, by = (SCREEN_H - BH) / 2;
-    const int OKX = bx + 276, OKY = by + 91, OKW = 68;
+    int OKX = bx + 276, OKY = by + 91;
+    const int OKW = 68;
 
     SDL_StartTextInput(SDL_GetKeyboardFocus());
-    plat_keyboard(true);           /* Android: the on-screen keyboard, here and only here */
+    /* Android: the on-screen keyboard comes up when the name field is tapped, not on its own - it
+     * covers the bottom half of the screen, so up front it hid the OK button and a mouse or remote
+     * cannot work it at all. While it is up the box moves to the top so OK stays in view. Enter, the
+     * pad's fire or Start, Back, or a click on OK all accept the name that is already there. */
+    bool kb_up = false;
+    bool pad_held = pad_fire() || pad_start();
     cursor_set(CURSOR_HAND);
     flush_clicks();
     bool done = false;
     while (!done && !quit_to_title) {
+        by = kb_up ? 6 : (SCREEN_H - BH) / 2;
+        OKY = by + 91;
+        bool pad_now = pad_fire() || pad_start();
+        if (pad_now && !pad_held) {
+            dialog_ok_press(OKX, OKY, OKW, btn, black);
+            done = true;
+        }
+        pad_held = pad_now;
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) plat_shutdown(0);
@@ -2364,8 +2378,11 @@ static void enter_high_score(int slot, const Image *bg)
                 if (gx >= OKX - 4 && gx < OKX + OKW + 4 && gy >= OKY - 4 && gy < OKY + 28) {
                     dialog_ok_press(OKX, OKY, OKW, btn, black);
                     done = true;
+                } else if (gx >= bx + 60 && gx < bx + 319 && gy >= by + 57 && gy < by + 75) {
+                    if (!kb_up) { kb_up = true; plat_keyboard(true); }   /* tapping the field types */
+                } else {
+                    selected = false;
                 }
-                selected = false;
                 (void)mx; (void)my;
             }
             if (e.type == SDL_EVENT_KEY_DOWN) {
@@ -2376,6 +2393,10 @@ static void enter_high_score(int slot, const Image *bg)
                 if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) {
                     dialog_ok_press(OKX, OKY, OKW, btn, black);
                     done = true;
+                }
+                if (e.key.key == SDLK_AC_BACK) {                   /* Android's Back button */
+                    if (kb_up) { kb_up = false; plat_keyboard(false); }
+                    else { dialog_ok_press(OKX, OKY, OKW, btn, black); done = true; }
                 }
                 if (e.key.key == SDLK_ESCAPE) { done = true; quit_to_title = true; }
             }
@@ -2404,7 +2425,7 @@ static void enter_high_score(int slot, const Image *bg)
         present();
         SDL_Delay(16);
     }
-    plat_keyboard(false);
+    if (kb_up) plat_keyboard(false);
     snprintf(A.score_row[slot].name, sizeof A.score_row[slot].name, "%s", n ? name : "Player");
 
     sfx(SND_LEVEL_CLEAR);                        /* [EnterHighScore] plays snd 144 on the way out */

@@ -22,6 +22,7 @@ typedef Uint32 SDL_AudioDeviceID; typedef Uint32 SDL_MouseButtonFlags;
 #define SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK 0xFFFFFFFFu
 #define SDL_BUTTON_LMASK 1u
 #define SDLK_ESCAPE 0x1bu
+#define SDLK_AC_BACK 0x4000010eu
 #define SDLK_RETURN 0x0du
 #define SDLK_KP_ENTER 0x0eu
 #define SDLK_BACKSPACE 0x08u
