@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:installLocation="auto">
+
+    <uses-feature android:glEsVersion="0x00020000" />
+
+    <!-- A Google TV box has none of these, and must still be able to install. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback"    android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad"     android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth"   android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host"    android:required="false" />
+    <!-- Declaring this is what makes Android deliver real mouse events rather than
+         synthesising touches from them. -->
+    <uses-feature android:name="android.hardware.type.pc"     android:required="false" />
+
+    <!-- The artwork is not in the APK: you point the game at a folder, usually in Downloads,
+         and it opens the files in it. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/banner"
+        android:allowBackup="true"
+        android:hardwareAccelerated="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true">
+
+            <!-- A phone or tablet finds it in the app drawer ... -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- ... and without this one a TV never shows it at all. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

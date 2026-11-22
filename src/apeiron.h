@@ -122,6 +122,14 @@ void draw_sprite(const Sprite *s, int frame, int x, int y);        /* frame is 1
 void draw_sprite_key(const Sprite *s, int frame, int x, int y, uint8_t key);
 void draw_sprite_clipped(const Sprite *s, int frame, int x, int y, int cx, int cy, int cw, int ch);
 void draw_sprite_disc(const Sprite *s, int frame, int x, int y, int cx, int cy, int cw, int ch);
+
+/* The font built into the executable, and the folder browser that uses it. Both have to work
+ * before a single asset is loaded, which is the whole reason they exist. */
+void mini_text(int x, int y, const char *s, uint8_t ink);
+void mini_text2x(int x, int y, const char *s, uint8_t ink);
+void mini_char(int x, int y, char c, uint8_t ink);
+int  mini_text_width(const char *s);
+bool assets_browse(char *out, size_t n);
 void fill_rect(int x, int y, int w, int h, uint8_t c);
 void draw_line(int x0, int y0, int x1, int y1, uint8_t c);
 void tile_pattern(const Image *pat, int x, int y, int w, int h);

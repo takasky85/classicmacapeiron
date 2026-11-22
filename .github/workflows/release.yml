@@ -272,9 +272,80 @@ jobs:
           path: apeiron-*.tar.gz
           if-no-files-found: error
 
+  # ----------------------------------------------------------------------- the Android build
+  # A sideloadable APK rather than a libretro core: it appears on the Google TV home screen by
+  # itself, and finds its artwork through the game's own folder browser instead of RetroArch's
+  # system directory.
+  android:
+    name: android-apk
+    needs: stamp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: fetch SDL for the Android port
+        run: ./android/fetch-sdl.sh
+
+      - name: build the APK
+        run: |
+          set -e
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          NDKVER=$(basename "$ANDROID_NDK_HOME")
+          echo "building against NDK $NDKVER"
+          cd android
+          gradle --no-daemon assembleRelease \
+                 -PapeironNdk="$NDKVER" \
+                 -PapeironStamp=${{ needs.stamp.outputs.stamp }} \
+                 -PapeironName=${{ needs.stamp.outputs.name }}
+
+      - name: collect the artifact
+        run: |
+          set -e
+          apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          test -n "$apk" || { find android/app/build/outputs | head -40; exit 1; }
+          stage="apeiron-android"
+          mkdir -p "$stage"
+          cp "$apk" "$stage/apeiron.apk"
+          cp README.md "$stage/"
+          unzip -l "$apk" | grep -E 'lib/|\.so' || true
+          cat > "$stage/HOW-TO-RUN.txt" <<'TXT'
+          Apeiron for Android and Google TV
+          =================================
+
+          Sideload apeiron.apk. On a Google TV box the usual way is the Downloader app, or
+          `adb install apeiron.apk` over the network.
+
+          The artwork is NOT in here. It is Ambrosia Software's, and this port reads it out of
+          the game's own resource forks rather than shipping copies. Make it from your own copy:
+
+              python3 tools/extract_assets.py <the installed Apeiron folder> assets
+
+          Copy that "assets" folder onto the device - Downloads is the easiest place - and the
+          first time the game starts it will show a browser so you can go and find it. It
+          remembers where it is after that.
+
+          Grant storage permission when it asks, or the browser will show empty folders.
+
+          Controls: a mouse works, including for steering, if you have one plugged in. Otherwise
+          the d-pad or a stick steers and the A button fires. In the menus the stick moves a
+          pointer and A clicks.
+          TXT
+          tar czf "$stage.tar.gz" "$stage"
+          ls -la apeiron-android*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apeiron-android
+          path: apeiron-android.tar.gz
+          if-no-files-found: error
+
   publish:
     name: publish the release
-    needs: [build, cores]
+    needs: [build, cores, android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
     steps:
@@ -307,6 +378,7 @@ jobs:
             | `apeiron-libretro-windows-x86_64.tar.gz` | a RetroArch core for Windows |
             | `apeiron-libretro-android-armv7.tar.gz` | a RetroArch core for 32-bit ARM Android |
             | `apeiron-libretro-android-arm64.tar.gz` | a RetroArch core for 64-bit ARM Android |
+            | `apeiron-android.tar.gz` | a sideloadable APK for Google TV and Android |
 
             ## What is NOT in them
 

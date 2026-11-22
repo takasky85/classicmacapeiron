@@ -32,7 +32,18 @@ int main(int argc, char **argv)
          * and a .app started from the Finder has no console at all - put up the system's folder
          * picker and take what it is given. The choice is remembered for next time. */
         SDL_Log("no artwork in '%s' - asking", dir);
-        if (!assets_pick_dir(found, sizeof found) || !assets_load(found)) {
+        /* The system's folder picker where there is one. Android has none - SDL has no dialog
+         * backend there, and the Storage Access Framework deals in content URIs rather than
+         * paths, which is no use to a game that opens files with fopen - so there it goes
+         * straight to the browser the game draws itself. */
+        bool got;
+#ifdef __ANDROID__
+        got = assets_browse(found, sizeof found);
+#else
+        got = assets_pick_dir(found, sizeof found);
+        if (!got) got = assets_browse(found, sizeof found);
+#endif
+        if (!got || !assets_load(found)) {
             plat_message("Apeiron needs its artwork",
                          "This build does not include the game's artwork, fonts or sounds - "
                          "they are Ambrosia Software's. Make an 'assets' folder from your own "

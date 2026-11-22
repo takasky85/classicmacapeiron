@@ -20,6 +20,7 @@ BUILD_NAME  ?=
 API         ?= 21
 
 SOURCES  := $(GAME)/main.c $(GAME)/platform.c $(GAME)/assets.c $(GAME)/intro.c $(GAME)/game.c \
+            $(GAME)/minifont.c $(GAME)/browse.c \
             $(ROOT)/libretro/core.c $(ROOT)/libretro/sdl_libretro.c
 
 DEFINES  := -Dmain=apeiron_main -Dexit=lr_exit \

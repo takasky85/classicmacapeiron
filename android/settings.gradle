@@ -1,0 +1,5 @@
+// The SDL checkout supplies both halves of the Android port: the Java in org.libsdl.app that
+// owns the Activity and the GL surface, and the C that CMake builds into libSDL3.so. Run
+// android/fetch-sdl.sh first to put it where both of them expect it.
+rootProject.name = 'Apeiron'
+include ':app'

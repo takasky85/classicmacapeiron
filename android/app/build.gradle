@@ -1,0 +1,57 @@
+plugins { id 'com.android.application' }
+
+// yymmddhhmm, passed in by the release workflow in Pacific time so the title screen's stamp
+// matches the other downloads; a local build gets this machine's clock.
+def buildStamp = project.findProperty('apeironStamp') ?: new Date().format('yyMMddHHmm')
+def buildName  = project.findProperty('apeironName')  ?: ''
+
+android {
+    namespace 'io.github.takasky85.apeiron'
+    compileSdk 34
+    // The runner passes the version it actually has installed; this is only a fallback.
+    ndkVersion project.findProperty('apeironNdk') ?: '27.0.12077973'
+
+    defaultConfig {
+        applicationId 'io.github.takasky85.apeiron'
+        minSdk 21
+        // Deliberately 28. From 29 onwards Android applies scoped storage, and this game finds
+        // its artwork by being pointed at a folder and then opening files in it with fopen -
+        // which scoped storage does not allow and the Storage Access Framework cannot provide,
+        // because what SAF hands back is a content URI, not a path. Targeting 28 keeps the
+        // legacy behaviour, where READ_EXTERNAL_STORAGE means what it says. Sideloaded builds
+        // have no store policy to answer to, and 28 is still well above the floor that Android
+        // 14 and 15 refuse to install below.
+        targetSdk 28
+        versionCode 1
+        versionName '1.0.3'
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static', "-DAPEIRON_BUILD_STAMP=${buildStamp}",
+                          "-DAPEIRON_BUILD_NAME=${buildName}"
+            }
+        }
+        // 32-bit ARM is the one that matters for the older Google TV boxes; 64-bit is nearly
+        // free and is what a current phone or Chromecast would rather run.
+        ndk { abiFilters 'armeabi-v7a', 'arm64-v8a' }
+    }
+
+    sourceSets {
+        main {
+            // SDL's own Activity and input plumbing, compiled straight out of the checkout.
+            java.srcDirs += ['../SDL/android-project/app/src/main/java']
+        }
+    }
+
+    externalNativeBuild { cmake { path 'jni/CMakeLists.txt' } }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signed with the debug key on purpose: this is a sideload, and an APK signed with
+            // a throwaway release key is no more trustworthy than one signed with the debug key
+            // while being harder for anyone to reproduce.
+            signingConfig signingConfigs.debug
+        }
+    }
+    lint { abortOnError false }
+}
