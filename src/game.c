@@ -53,6 +53,7 @@ typedef struct Ent {
     int    hits;               /* flea: 2 to kill; uproot: 3 */
     int    data;               /* points value, yummie kind, ... */
     int    timer;
+    bool   holds;              /* a flying icon that keeps its box empty until it lands */
     /* centipede, following the routine the sprite's +0x0c handler runs */
     bool    head;
     int     ix, iy;            /* whole-pixel position, as the routine keeps it */
@@ -124,6 +125,19 @@ static void psyc_apply(void)
 {
     Rgb tbl[256];
     psyc_clut(psyc_phase + 1, tbl);        /* phase 2 is three rotations, i.e. the game's own */
+    /* Rotating a colour's components cannot change a grey: red, green and blue are equal, so they
+     * trade places for nothing. Waves 12 to 22 are played over a grey floor, which therefore sat
+     * perfectly still while everything else flashed. With the enhancement on, near-greys are pulled
+     * towards cyan, then magenta, on the two flashing phases (#57). */
+    if (enh[ENH_PSYC_GREY] && psyc_phase < 2) {
+        for (int i = 0; i < 256; i++) {
+            int hi = tbl[i].r > tbl[i].g ? tbl[i].r : tbl[i].g; if (tbl[i].b > hi) hi = tbl[i].b;
+            int lo = tbl[i].r < tbl[i].g ? tbl[i].r : tbl[i].g; if (tbl[i].b < lo) lo = tbl[i].b;
+            if (hi - lo > 0x1800 || hi == 0) continue;          /* a real colour, or black */
+            if (psyc_phase == 0) { tbl[i].r = tbl[i].r * 55 / 100; }                   /* cyan-ish */
+            else                 { tbl[i].g = tbl[i].g * 55 / 100; }                   /* magenta-ish */
+        }
+    }
     set_monitor_clut(tbl, true);
 }
 /* [UpdateWeapons]'s five slots, in the order the Yummiary page describes them. */
@@ -135,8 +149,8 @@ static int  powerup[5];                    /* ticks left on each */
 /* What a box is holding back is worked out from the icons actually in the air rather than kept in
  * a counter: a counter has to be unwound by whichever event happens first, and dying mid-flight or
  * picking up a second coin got it out of step with the box. An icon that should leave its slot
- * empty until it lands carries anim = 1; one that is only topping up a slot already counting down
- * carries anim = 0 and hides nothing. */
+ * empty until it lands has `holds` set; one that is only topping up a slot already counting down
+ * hides nothing. */
 static bool respawn_flying;      /* a replacement shooter is on its way in from the box */
 /* Where a flying icon is headed. e->hits carries one of these; e->data carries the power-up slot
  * for FLY_WEAPON and the multiplier's face for FLY_MULT. */
@@ -173,7 +187,9 @@ static Ent *fly_icon(int kind, int data, fix_t fx, fix_t fy, bool hides)
     f->x = fx; f->y = fy;
     f->vx = fx; f->vy = fy;              /* where it started, for the interpolation */
     f->hits = kind; f->data = data; f->timer = 0;
-    f->anim = hides ? 1 : 0;
+    f->holds = hides;   /* not anim: update_entities bumps anim on every entity every frame, which made
+                         * every icon look like it was hiding its box - a weapon topped up while still
+                         * running vanished from the box until the new copy landed (#53) */
     return f;
 }
 
@@ -182,7 +198,7 @@ static int fly_count(int kind, int data)
     int n = 0;
     for (int i = 0; i < MAX_ENT; i++) {
         const Ent *e = &ent[i];
-        if (e->alive && e->type == E_FLYICON && e->hits == kind && e->anim &&
+        if (e->alive && e->type == E_FLYICON && e->hits == kind && e->holds &&
             (data < 0 || e->data == data)) n++;
     }
     return n;
@@ -1662,6 +1678,9 @@ static void house_keeping(void)
         for (int i = 0; i < MAX_ENT; i++) {
             Ent *t = &ent[i];
             if (!t->alive) continue;
+            /* The shield's box reaches five pixels above the shooter, so a coin falling on it was
+             * batted away before it could touch the shooter underneath. Left alone, it lands. */
+            if (t->type == E_YUMMIE && enh[ENH_SHIELD_COINS]) continue;
             int w = 16, h = 16;
             switch (t->type) {
             case E_SCORP: w = 24; h = 24; break;
@@ -1820,14 +1839,14 @@ static void tally_pickups(void)
 /* The demo's hand on the mouse. It picks a point to be at and gives back the pixel movement
  * towards it, with a little momentum, so the shooter drifts and overshoots the way a hand does
  * rather than stepping along the axes. */
-/* The demo's finger: bursts and gaps of random length, not a held trigger. */
+/* The demo's finger: long bursts and short gaps of random length, not a held trigger. */
 static bool demo_trigger(void)
 {
     static long until;
     static bool on = true;
     if (ticks > until) {
         on = !on;
-        until = ticks + (on ? 8 + rnd(50) : 3 + rnd(24));
+        until = ticks + (on ? 40 + rnd(160) : 2 + rnd(10));    /* mostly firing, a short breath between */
     }
     return on;
 }
@@ -1882,6 +1901,11 @@ static void demo_move(float *mx, float *my)
         else if (roll < 8) { pick_x = fieldx; pick_y = (float)iy; }                   /* sweep sideways */
         else if (roll < 9) { pick_x = (float)ix; pick_y = bandy; }                    /* up or down */
         else { pick_x = (float)ix + (float)(rnd(81) - 40); pick_y = (float)iy + (float)(rnd(41) - 20); }
+        /* A target on top of where it already is would leave the shooter sitting there. */
+        if (fabsf(pick_x - ix) + fabsf(pick_y - iy) < 40.0f) {
+            pick_x = (float)ix + (rnd(2) ? 60.0f : -60.0f) - (float)rnd(30) * (rnd(2) ? 1 : -1);
+            pick_y = (float)SHOOTER_TOP + (float)rnd(SHOOTER_YMAX - SHOOTER_TOP);
+        }
     }
     if (!flee) { wantx = pick_x; wanty = pick_y; }
     if (wanty < SHOOTER_TOP) wanty = (float)SHOOTER_TOP;
@@ -1906,7 +1930,7 @@ static void demo_move(float *mx, float *my)
         reach_dur = 3.0f + d * 0.04f;                  /* further is slower, as a hand is */
         if (flee) reach_dur *= 0.45f;                  /* except when getting out of the way */
         reach_t = 0.0f;
-        reach_hold = ticks + 1 + rnd(flee ? 2 : 8);    /* the pause after arriving */
+        reach_hold = ticks + (rnd(4) ? 0 : 2 + rnd(4));   /* mostly straight on to the next, now and then a breath */
     } else if (stale && flee) {
         reach_gx = wantx; reach_gy = wanty;            /* a dodge redirects a reach in flight */
     }
@@ -1920,8 +1944,8 @@ static void demo_move(float *mx, float *my)
     vx = (reach_gx - was_x) * (p1 - p0);
     vy = (reach_gy - was_y) * (p1 - p0);
     if (reach_t >= reach_dur) {                        /* resting: just the tremor */
-        vx += (float)(rnd(3) - 1) * 0.5f;
-        vy += (float)(rnd(3) - 1) * 0.4f;
+        vx += (float)(rnd(3) - 1) * 1.0f;
+        vy += (float)(rnd(3) - 1) * 0.8f;
     }
     *mx = vx; *my = vy;
 }
@@ -1994,6 +2018,12 @@ static void move_player(void)
  * calling [AnimateFrame] and [CompositeFrame] through both, so the creatures keep moving. */
 static void idle_frame(void)
 {
+    /* Paced against a deadline, like the main loop. This used to draw the frame and then sleep a
+     * whole frame's worth on top, so the count-up ran at one frame per (drawing time + 33 ms): on
+     * a machine where drawing takes a good part of a frame that is visibly slower than play. */
+    static Uint64 due;
+    Uint64 now0 = SDL_GetTicks();
+    if (due == 0 || now0 > due + 200 || now0 + 200 < due) due = now0;   /* a fresh start after a gap */
     ticks += TICKS_PER_FRAME;
     gticks += TICKS_PER_FRAME;
     player_anim++; pede_anim++;
@@ -2005,7 +2035,9 @@ static void idle_frame(void)
     draw_frame();
     set_entries();
     if (key_down(SDL_SCANCODE_ESCAPE)) quit_to_title = true;
-    SDL_Delay((int)(2 * MAC_TICK_MS));
+    due += (Uint64)(TICKS_PER_FRAME * MAC_TICK_MS + 0.5);
+    Uint64 now = SDL_GetTicks();
+    if (now < due) SDL_Delay((Uint32)(due - now));
 }
 
 /* [CountOffShrooms](sound). It plays the sound it is given and waits it out, then walks the

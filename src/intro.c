@@ -726,6 +726,10 @@ static int page_rows(int page, Row *r, int max)
             "keeps the psychedelic mushroom's colour cycling off");
         ADD(ROW_CHECK, 6, ENH_TALLY_PICKUP, "Coins count during the tally",
             "a coin that reaches you while the bonus counts off is yours");
+        ADD(ROW_CHECK, 6, ENH_SHIELD_COINS, "Shield lets coins through",
+            "a coin that touches the shield is yours, not knocked away");
+        ADD(ROW_CHECK, 6, ENH_PSYC_GREY, "Psychedelic tints grey",
+            "waves 12-22 have a grey floor, which the colour cycling leaves alone");
         ADD(ROW_VALUE, 9, 0, "Starting wave", NULL);
         ADD(ROW_NOTE, 0, 0, "Starting past the first forfeits the high score.", NULL);
         ADD(ROW_NOTE, 0, 0, "Still to come: a Mac OS boot screen on the way in.", NULL);
@@ -893,6 +897,14 @@ static void draw_options(int page, const Row *row, int nrow)
         fill_rect(ROW_X + 1, y + 1, 11, 11, black);
         if (on) fill_rect(ROW_X + 3, y + 3, 7, 7, r->kind == ROW_RADIO ? blue : white);
         draw_text(&A.geneva9, ROW_X + 22, y + 11, r->label, white, 0);
+        if (r->group == 5) {                       /* a cheat that hands over a weapon wears its icon */
+            static const struct { int cheat, weapon; } W[] = {
+                { CH_NICEBOX, 0 }, { CH_DJARUM, 1 }, { CH_SQUISH, 2 }, { CH_NALA, 3 }, { CH_SNAPPLE, 4 },
+            };
+            for (size_t k = 0; k < sizeof W / sizeof W[0]; k++)
+                if (r->index == W[k].cheat && A.wpn[W[k].weapon].count > 0)
+                    draw_sprite(&A.wpn[W[k].weapon], 1, ROW_X + 128, y - 1);
+        }
         if (r->note) {
             /* the notes sit in a column of their own; one long enough to reach the right margin is
              * cut back word by word rather than running off the edge of the screen */
