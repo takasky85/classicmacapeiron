@@ -1104,14 +1104,21 @@ static void SDLCALL pick_cb(void *userdata, const char * const *list, int filter
     st->done = true;
 }
 
+/* Is anyone actually there? The dummy and offscreen video drivers are what a CI runner and a
+ * headless machine get, and nothing that waits for a person may wait under them: the release
+ * workflow runs the game exactly like this to check that a missing assets folder is refused
+ * rather than crashed on, and anything that blocks for input hangs that job until it is killed.
+ * Which is what the folder browser did, for fifty-five minutes, twice. */
+bool plat_headless(void)
+{
+    const char *drv = SDL_GetCurrentVideoDriver();
+    return !drv || !strcmp(drv, "dummy") || !strcmp(drv, "offscreen");
+}
+
 bool assets_pick_dir(char *out, size_t n)
 {
     PickState st = { out, n, false, false };
-    /* With no real display there is nobody to answer, and waiting for a dialog that will never
-     * appear would hang a build. The release workflow runs the game exactly like this to check it
-     * refuses a missing assets folder without crashing. */
-    const char *drv = SDL_GetCurrentVideoDriver();
-    if (!drv || !strcmp(drv, "dummy") || !strcmp(drv, "offscreen")) return false;
+    if (plat_headless()) return false;
     plat_message("Where is the artwork?",
                  "This build does not include the game's artwork, fonts or sounds - they are "
                  "Ambrosia Software's. Choose the 'assets' folder you made from your own copy "
@@ -1175,12 +1182,14 @@ void plat_message(const char *title, const char *body)
     Uint64 until = SDL_GetTicks() + 120000;
     for (;;) {
         fill_rect(0, 0, SCREEN_W, SCREEN_H, C_BG);
+
         mini_text2x(40, 60, title, C_TITLE);
         for (int i = 0; i < nlines; i++) mini_text(40, 100 + i * 12, lines[i], C_INK);
         mini_text(40, SCREEN_H - 42, "left/right or D: what the game can see", C_TITLE);
         mini_text(40, SCREEN_H - 30, "any other key, button or tap carries on", C_TITLE);
         set_entries();
         present();
+        if (plat_headless()) break;        /* drawn for the record; nobody is here to dismiss it */
 
         /* The report is the useful half of this on a TV: it says which folders the game can
          * actually open and why not when it cannot. Left and right reach it from a remote. */

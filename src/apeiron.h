@@ -206,6 +206,7 @@ const char *assets_find_dir(char *out, size_t n);   /* the usual places, and the
 void assets_remember_dir(const char *dir);
 bool assets_pick_dir(char *out, size_t n);         /* the system's folder picker */
 void plat_message(const char *title, const char *body);
+bool plat_headless(void);   /* no real display: nothing may wait for a person */
 bool assets_load_sprites(void);
 
 /* the artwork/sound packs that ship with the game, and the cheats of STR# 132 */

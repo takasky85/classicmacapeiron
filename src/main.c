@@ -80,6 +80,10 @@ int main(int argc, char **argv)
                          "it. See README.md.");
 #ifndef __ANDROID__
             plat_shutdown(1);
+#else
+            /* Asking again is right only while there is someone to ask. Without a display the
+             * loop would spin at full speed forever rather than wait on input. */
+            if (plat_headless()) plat_shutdown(1);
 #endif
         }
         dir = found;

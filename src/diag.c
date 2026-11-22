@@ -190,6 +190,7 @@ void diag_screen(void)
         mini_text(16, SCREEN_H - 14, "any key, any button or a tap goes back", D_TITLE);
         set_entries();
         present();
+        if (plat_headless()) break;       /* drawn once for a screenshot; no one to dismiss it */
 
         char k;
         if (take_key(&k) || take_click_only() || pad_fire() || pad_start()) break;

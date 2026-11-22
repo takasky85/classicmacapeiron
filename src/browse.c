@@ -181,6 +181,11 @@ static void draw(const char *path, int sel, int top, bool here_is_it)
  * Returns true and fills `out` on success. */
 bool assets_browse(char *out, size_t n)
 {
+    /* Nobody is at the screen - a CI runner, a headless machine - so there is no point drawing
+     * a folder list and waiting for a choice that cannot come. Say so and let the caller give up
+     * tidily, which is what the release workflow checks the game does. */
+    if (plat_headless()) { diag_note("apeiron: no display - not opening the browser"); return false; }
+
     char path[1200];
     int rank;
     snprintf(path, sizeof path, "%s", best_start(&rank));
