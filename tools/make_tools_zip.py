@@ -14,7 +14,7 @@ ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, 'downloads', 'apeiron-asset-tools.zip')
 STAMP = (2026, 1, 1, 0, 0, 0)          # fixed, so the same input always gives the same bytes
 
-PY_FILES = ['extract_assets.py', 'rsrc.py', 'pict.py', 'unpack_macbinary.py']
+PY_FILES = ['extract_assets.py', 'extract_assets_gui.py', 'rsrc.py', 'pict.py', 'unpack_macbinary.py']
 FONT_FILES = [('fonts/pixChicago.ttf', 'pixChicago.ttf'), ('fonts/Geneva9.1.otf', 'Geneva9.1.otf'),
               ('fonts/Geneva9.1-OFL.txt', 'Geneva9.1-OFL.txt'), ('fonts/ATTRIBUTION.txt', 'FONT-ATTRIBUTION.txt')]
 
@@ -34,9 +34,11 @@ What you need
       - Geneva.zip / Chicago.zip (Apple's fonts, from a Mac): used instead when present.
 
 How to use it
-  Windows:  unzip this, then drag Apeiron_1.0.3.zip onto "Extract Apeiron Assets.bat".
-            (Or put the game zip in Downloads, or in this folder, and double-click the .bat.)
-  Anywhere: python3 extract_assets.py Apeiron_1.0.3.zip
+  Windows:  unzip this, then double-click "Extract Apeiron Assets.bat": a small window opens,
+            pick the game zip (it finds one in Downloads by itself) and press Extract.
+            Dropping the zip onto the .bat fills it in for you.
+  Anywhere: python3 extract_assets_gui.py        (the window)
+            python3 extract_assets.py Apeiron_1.0.3.zip   (no window)
 
 The result is a folder called apeiron_classic_assets, written next to the game zip.
   Windows: put it beside apeiron.exe.
@@ -64,7 +66,14 @@ if not defined PY (
   echo Installing Pillow, the image library this needs...
   %PY% -m pip install --user pillow
 )
+%PY% -c "import tkinter" >nul 2>nul && goto window
+echo (This Python has no window toolkit, so this runs in text mode.)
 %PY% extract_assets.py %*
+goto :eof
+:window
+rem pyw / pythonw start it without a console window.
+if "%PY%"=="py" (set PYW=pyw) else (set PYW=pythonw)
+start "" %PYW% extract_assets_gui.py %*
 """
 
 

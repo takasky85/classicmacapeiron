@@ -891,6 +891,13 @@ def run():
             alt = os.path.join(os.path.expanduser('~'), DEFAULT_OUT)
         print("cannot write beside the input, using %s instead" % alt)
         out = alt
+    convert(src, out)
+    print('Put that folder in Download on the TV, or beside apeiron.exe on Windows.')
+
+
+def convert(src, out):
+    """The whole job: unpack, find fonts, convert, clean up. Prints as it goes and calls sys.exit
+    with a message when it cannot go on, which is what both the command line and the window use."""
     game, temps = prepare(src)
     try:
         here = os.path.dirname(os.path.abspath(src.rstrip('/\\')))
@@ -907,7 +914,7 @@ def run():
         for t in temps:
             _rmtree(t)
     print('\nDone: %s' % os.path.abspath(out))
-    print('Put that folder in Download on the TV, or beside apeiron.exe on Windows.')
+    return out
 
 
 if __name__ == '__main__':

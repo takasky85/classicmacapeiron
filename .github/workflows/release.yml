@@ -105,9 +105,10 @@ jobs:
           and they live in the game's own resource forks - so you make them from your own copy of
           Apeiron rather than downloading them from here.
 
-          apeiron-asset-tools.zip (in this folder) does it: unzip it, then drag your
-          Apeiron_1.0.3.zip onto "Extract Apeiron Assets.bat" (needs Python 3). It writes a folder
-          called "apeiron_classic_assets" next to your zip. The menu and dialog fonts are free ones
+          apeiron-asset-tools.zip (in this folder) does it: unzip it and double-click
+          "Extract Apeiron Assets.bat" (needs Python 3), pick your Apeiron_1.0.3.zip in the small
+          window and press Extract. It writes a folder called "apeiron_classic_assets" next to
+          your zip. The menu and dialog fonts are free ones
           that are included - see fonts\ATTRIBUTION.txt - so Apple's fonts are not needed.
 
           Put the "apeiron_classic_assets" folder beside apeiron.exe, or pass its path:
@@ -231,7 +232,7 @@ jobs:
             | - | - |
             | `apeiron-windows-x86_64.zip` | Windows 11 (and 10), 64-bit - one executable with SDL3 linked in, nothing else needed |
             | `apeiron.apk` | a sideloadable APK for Google TV and other 32-bit ARM Android - built against SDL's official prebuilt Android package |
-            | `apeiron-asset-tools.zip` | the script that makes the artwork folder from your own copy of Apeiron, with the free fonts it uses (Windows: drag your game zip onto the .bat inside) |
+            | `apeiron-asset-tools.zip` | the script that makes the artwork folder from your own copy of Apeiron, with the free fonts it uses (Windows: double-click the .bat inside, pick your game zip, press Extract) |
 
             ## What is NOT in them
 
