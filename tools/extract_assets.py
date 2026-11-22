@@ -105,14 +105,38 @@ def nfnt_to_font(nfnt, stem):
     open(stem + '.fnt', 'w').write('\n'.join(lines) + '\n')
     return W, frh, asc
 
-def ttf_to_font(ttf, size, stem):
-    """Make a font in the same two files nfnt_to_font writes from a pixel-style TrueType font, for
-    when the real Mac font is not to hand. `size` is the font's own pixel size, the one at which it
-    renders as crisp square pixels (8 for pixChicago); the glyphs are drawn with no smoothing."""
+def ttf_native_size(ttf):
+    """The pixel size at which a pixel-style TrueType font is drawn on a whole-pixel grid: the
+    smallest size whose drawing is exactly what the same text at twice the size shrinks to."""
     from PIL import ImageDraw, ImageFont
+    def draw(size):
+        f = ImageFont.truetype(ttf, size)
+        im = Image.new('1', (size * 40, size * 3), 0)
+        d = ImageDraw.Draw(im)
+        d.fontmode = '1'
+        d.text((size, 0), 'HEgxo,AMw', font=f, fill=1)
+        return im
+    for size in range(5, 33):
+        a, b = draw(size), draw(size * 2)
+        if a.getbbox() and b.resize(a.size, Image.NEAREST).tobytes() == a.tobytes() \
+                and a.resize(b.size, Image.NEAREST).tobytes() == b.tobytes():
+            return size
+    return 8
+
+
+def ttf_to_font(ttf, stem, ascent=None, descent=None):
+    """Make a font in the same two files nfnt_to_font writes from a pixel-style TrueType font, for
+    when the real Mac font is not to hand. The glyphs are drawn at the font's own pixel size, with
+    no smoothing. `ascent` and `descent` are the Mac font's, so that text sits on the same baseline
+    and the same line height as the game was laid out for; the font's own are used if none."""
+    from PIL import ImageDraw, ImageFont
+    size = ttf_native_size(ttf)
     font = ImageFont.truetype(ttf, size)
-    asc, desc = font.getmetrics()
+    f_asc, f_desc = font.getmetrics()
+    asc = f_asc if ascent is None else ascent
+    desc = f_desc if descent is None else descent
     height = asc + desc
+    dy = asc - f_asc                             # moves the font's baseline onto the Mac font's
     PAD = 4
     glyphs = []                                   # (columns image or None, left, advance) per code
     for c in range(256):
@@ -123,7 +147,7 @@ def ttf_to_font(ttf, size, stem):
         im = Image.new('1', (adv + 2 * PAD + 8, height), 0)
         d = ImageDraw.Draw(im)
         d.fontmode = '1'
-        d.text((PAD, 0), ch, font=font, fill=1, anchor='la')
+        d.text((PAD, dy), ch, font=font, fill=1, anchor='la')
         box = im.getbbox()
         if box is None:
             glyphs.append((None, 0, adv))
@@ -539,18 +563,16 @@ def main(game, out, fonts):
     ny = {14: 1067, 18: 32121, 24: 28514}
     for size, nid in ny.items():
         print(f'font_newyork{size}', nfnt_to_font(app[('NFNT', nid)], f'{out}/font_newyork{size}'))
-    if 'Geneva' in fonts:
-        gen = res(fonts['Geneva'])
-        print('font_geneva9 ', nfnt_to_font(gen[('NFNT', 3130)], f'{out}/font_geneva9'))
-    else:
-        print('font_geneva9  (stand-in: New York 14)', nfnt_to_font(app[('NFNT', ny[14])], f'{out}/font_geneva9'))
-    if 'Chicago' in fonts:
-        chi = res(fonts['Chicago'])
-        print('font_chicago12', nfnt_to_font(chi[('NFNT', 1025)], f'{out}/font_chicago12'))
-    elif 'pixChicago' in fonts:
-        print('font_chicago12 (pixChicago)', ttf_to_font(fonts['pixChicago'], 8, f'{out}/font_chicago12'))
-    else:
-        print('font_chicago12 (stand-in: New York 14)', nfnt_to_font(app[('NFNT', ny[14])], f'{out}/font_chicago12'))
+    for slot, nfnt_id, stem, real, asc, desc in (('Geneva', 3130, 'font_geneva9', 'Geneva', 10, 2),
+                                                 ('Chicago', 1025, 'font_chicago12', 'Chicago', 12, 3)):
+        if real in fonts:
+            r = res(fonts[real])
+            print(stem, nfnt_to_font(r[('NFNT', nfnt_id)], f'{out}/{stem}'))
+        elif 'ttf_' + slot in fonts:
+            print(stem, '(%s)' % os.path.basename(fonts['ttf_' + slot]),
+                  ttf_to_font(fonts['ttf_' + slot], f'{out}/{stem}', asc, desc))
+        else:
+            print(stem, '(stand-in: New York 14)', nfnt_to_font(app[('NFNT', ny[14])], f'{out}/{stem}'))
 
     # the in-game score panel, the title screen's buttons and the three instruction pages
     print('scorematt.bmp   ', indexed_bmp(titles[('PICT', 401)], game_clut, f'{out}/scorematt.bmp'))
@@ -771,18 +793,22 @@ def find_fonts(search_dirs, game_dir, keep):
                     break
             if name in found:
                 break
-    # Failing the real Chicago, a free pixel font that looks like it: any file with "chicago" in
-    # its name that ends in .ttf (pixChicago.ttf, or what a download of it is called).
-    if 'Chicago' not in found:
-        for d in search_dirs + [os.path.join(d, 'source_fonts') for d in search_dirs]:
+    # Failing the real font, a free pixel font that looks like it: a .ttf with the name in it
+    # (pixChicago.ttf, or what a download of it is called). The Geneva stand-in may be called Geneve.
+    ttf_dirs = search_dirs + [os.path.join(d, 'source_fonts') for d in search_dirs] + [os.path.join(HERE, 'fonts')]
+    for slot, words in (('Chicago', ('chicago',)), ('Geneva', ('geneva', 'geneve'))):
+        if slot in found:
+            continue
+        for d in ttf_dirs:
             try:
-                ttfs = sorted(f for f in os.listdir(d) if f.lower().endswith('.ttf') and 'chicago' in f.lower())
+                ttfs = sorted(f for f in os.listdir(d)
+                              if f.lower().endswith('.ttf') and any(w in f.lower() for w in words))
             except OSError:
                 continue
             if ttfs:
-                found['pixChicago'] = os.path.join(d, ttfs[0])
+                found['ttf_' + slot] = os.path.join(d, ttfs[0])
                 break
-    missing = [n for n in FONT_NAMES if n not in found and not (n == 'Chicago' and 'pixChicago' in found)]
+    missing = [n for n in FONT_NAMES if n not in found and ('ttf_' + n) not in found]
     if missing:
         print(
             "\n*** %s not found - using the game's own New York font in its place for now. ***\n"
@@ -790,9 +816,8 @@ def find_fonts(search_dirs, game_dir, keep):
             "For the real look, put %s (from a Mac; each holds .rsrc/<font name>) in the same\n"
             "folder as the game's zip, or in Downloads, and run this again.\n"
             % (' and '.join(missing), ' and '.join(n + '.zip' for n in missing)))
-    for n in list(FONT_NAMES) + ['pixChicago']:
-        if n in found:
-            print('font file for %-10s %s' % (n, found[n]))
+    for n in sorted(found):
+        print('font file for %-12s %s' % (n, found[n]))
     return found
 
 
@@ -871,7 +896,7 @@ def run():
         here = os.path.dirname(os.path.abspath(src.rstrip('/\\')))
         keep = tempfile.mkdtemp(prefix='apeiron-fonts-')
         temps.append(keep)
-        fonts = find_fonts([here, os.path.join(HERE, '..'), os.getcwd()] + _home_dirs(), game, keep)
+        fonts = find_fonts([here, HERE, os.path.join(HERE, '..'), os.getcwd()] + _home_dirs(), game, keep)
         main(game, out, fonts)
     except PermissionError as e:
         sys.exit("\nPermission denied: %s\n"

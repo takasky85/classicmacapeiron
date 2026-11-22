@@ -15,6 +15,7 @@ OUT = os.path.join(ROOT, 'downloads', 'apeiron-asset-tools.zip')
 STAMP = (2026, 1, 1, 0, 0, 0)          # fixed, so the same input always gives the same bytes
 
 PY_FILES = ['extract_assets.py', 'rsrc.py', 'pict.py', 'unpack_macbinary.py']
+FONT_FILES = [('fonts/pixChicago.ttf', 'pixChicago.ttf'), ('fonts/ATTRIBUTION.txt', 'FONT-ATTRIBUTION.txt')]
 
 README = """Apeiron asset tools
 ===================
@@ -26,9 +27,9 @@ What you need
   * Apeiron_1.0.3.zip (the Mac game, as you downloaded it)
   * Python 3 and Pillow. On Windows, install Python from python.org (tick "Add to PATH"); the
     .bat file below installs Pillow for you.
-  * Optional fonts. Without them the extractor still works and tells you what it used instead.
-      - pixChicago.ttf (a free pixel font): if it is beside the game zip, in Downloads or in this
-        folder, it is used for the dialogs' Chicago text.
+  * Fonts are optional; without them the extractor still works and tells you what it used instead.
+      - pixChicago.ttf (in this zip - a free pixel font by Etienne Desclides, see
+        FONT-ATTRIBUTION.txt) is used for the dialogs' Chicago text.
       - Geneva.zip / Chicago.zip (Apple's fonts, from a Mac): used when present, and they win.
       - Anything missing is replaced by the game's own New York font.
 
@@ -69,6 +70,7 @@ if not defined PY (
 
 def members():
     out = [(n, open(os.path.join(HERE, n), 'rb').read()) for n in PY_FILES]
+    out += [(zname, open(os.path.join(HERE, src), 'rb').read()) for src, zname in FONT_FILES]
     out.append(('README.txt', README.replace('\n', '\r\n').encode('utf-8')))
     out.append(('Extract Apeiron Assets.bat', BAT.replace('\n', '\r\n').encode('utf-8')))
     return out
