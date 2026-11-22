@@ -65,6 +65,7 @@ typedef struct Ent {
     int     leader;            /* index of the one it follows, -1 for a head */
     bool    counts;            /* made by [StartLevel], so the wave is not over until it dies */
     bool    poisoned;
+    int     wedge_x, wedge_t;  /* where a head last made headway sideways, and when (#55) */
 } Ent;
 
 static Ent ent[MAX_ENT];
@@ -524,13 +525,45 @@ static void pede_head_step(Ent *e)
     e->iy = y;
 }
 
+/* A head that has gone nowhere sideways for eight seconds is wedged - a stack of mushrooms down a
+ * side wall can hold one bouncing between them for ever, with its whole body piled up along the
+ * edge (#55) - so it tramples what is in its way: the mushrooms around it, a cell either side and
+ * the row below, are cleared and it carries on. Nothing in a healthy run gets near this: a head
+ * stair-stepping down a wall is out of it in a couple of seconds. */
+static void pede_unwedge(Ent *e)
+{
+    if (!e->wedge_t || abs(e->ix - e->wedge_x) > 24) {
+        e->wedge_x = e->ix;
+        e->wedge_t = ticks + 1;
+        return;
+    }
+    if (ticks + 1 - e->wedge_t < 480) return;
+    e->wedge_t = ticks + 1;
+    int col = clampi((e->ix + 8) / CELL, 0, GRID_W - 1), row = clampi((e->iy + 8) / CELL, 0, GRID_H - 1);
+    for (int dc = -1; dc <= 1; dc++)
+        for (int dr = -1; dr <= 1; dr++)
+            if (in_grid(col + dc, row + dr) && shroom[col + dc][row + dr]) {
+                create_scum(FIX((col + dc) * CELL), FIX((row + dr) * CELL));
+                pluck_shroom(col + dc, row + dr);
+            }
+    e->poisoned = false;
+    e->ndir = (e->ix <= (PEDE_XMIN + PEDE_XMAX) / 2) ? D_RIGHT : D_LEFT;
+    if (e->dir == D_UP || e->dir == D_DOWN) e->targ = e->dir == D_DOWN ? e->iy + CELL : e->iy - CELL;
+    else e->dir = e->ndir == D_RIGHT ? D_RIGHT : D_LEFT;
+    sfx(SND_MUNCH1);
+}
+
 static void pede_update(Ent *e)
 {
     if (e->head) {
         pede_head_step(e);
+        pede_unwedge(e);
     } else {
-        Ent *ld = (e->leader >= 0 && ent[e->leader].alive && ent[e->leader].type == E_PEDE)
-                ? &ent[e->leader] : NULL;
+        /* A body follows the segment ahead of it only while that segment says it is followed: a
+         * stale index - one whose slot has since been handed to something else, a new head
+         * coming in from the side, say - must not make a whole chain trail after a stranger. */
+        Ent *ld = (e->leader >= 0 && ent[e->leader].alive && ent[e->leader].type == E_PEDE &&
+                   ent[e->leader].follower == ent_index(e)) ? &ent[e->leader] : NULL;
         if (!ld) { e->head = true; e->leader = -1; pede_head_step(e); }
         else {
             const Pt *p = &ld->q[ld->qr];
