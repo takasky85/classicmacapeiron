@@ -20,8 +20,9 @@ That unpacks the zip, converts what is in it and writes a folder called `apeiron
 beside the zip (give a second argument to put it somewhere else). The game also needs Apple's
 Geneva and Chicago fonts, which are not in the game's files or in this repository: put the
 `Geneva.zip` and `Chicago.zip` you get from a Mac beside the game's zip (or in Downloads) and it
-finds them. Without them it still works, using the game's own New York font in their place and
-saying so. With no arguments at all it looks for `Apeiron*.zip` in Downloads or the current folder,
+finds them. Without them it still works: a `pixChicago.ttf` (a free pixel font) beside the zip or in
+Downloads stands in for Chicago, and anything else missing uses the game's own New York font, and
+it says so. With no arguments at all it looks for `Apeiron*.zip` in Downloads or the current folder,
 and on Windows you can drop the zip onto the script. The game
 looks for `apeiron_classic_assets` (or the older name, `assets`) beside the executable, or in
 Download on Android; a path on the command line works anywhere.

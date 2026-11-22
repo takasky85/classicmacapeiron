@@ -105,6 +105,47 @@ def nfnt_to_font(nfnt, stem):
     open(stem + '.fnt', 'w').write('\n'.join(lines) + '\n')
     return W, frh, asc
 
+def ttf_to_font(ttf, size, stem):
+    """Make a font in the same two files nfnt_to_font writes from a pixel-style TrueType font, for
+    when the real Mac font is not to hand. `size` is the font's own pixel size, the one at which it
+    renders as crisp square pixels (8 for pixChicago); the glyphs are drawn with no smoothing."""
+    from PIL import ImageDraw, ImageFont
+    font = ImageFont.truetype(ttf, size)
+    asc, desc = font.getmetrics()
+    height = asc + desc
+    PAD = 4
+    glyphs = []                                   # (columns image or None, left, advance) per code
+    for c in range(256):
+        ch = bytes([c]).decode('mac_roman', 'replace') if c >= 32 and c != 127 else ' '
+        adv = int(round(font.getlength(ch)))
+        if c != 32 and font.getmask(ch).getbbox() is None:     # the font has no such glyph
+            ch, adv = ' ', int(round(font.getlength(' ')))
+        im = Image.new('1', (adv + 2 * PAD + 8, height), 0)
+        d = ImageDraw.Draw(im)
+        d.fontmode = '1'
+        d.text((PAD, 0), ch, font=font, fill=1, anchor='la')
+        box = im.getbbox()
+        if box is None:
+            glyphs.append((None, 0, adv))
+        else:
+            glyphs.append((im.crop((box[0], 0, box[2], height)), box[0] - PAD, adv))
+    W = sum(g[0].width for g in glyphs if g[0] is not None) or 1
+    strip = Image.new('P', (W, height), 0)
+    lines = ['FONT %d %d %d' % (asc, desc, height)]
+    x = 0
+    for g, left, adv in glyphs:
+        if g is None:
+            lines.append('%d 0 0 %d' % (x, adv))
+            continue
+        strip.paste(g.convert('L').point(lambda v: 1 if v else 0), (x, 0))     # ink is index 1
+        lines.append('%d %d %d %d' % (x, g.width, left, adv))
+        x += g.width
+    strip.putpalette([0, 0, 0, 255, 255, 255] + [0] * 762)
+    strip.save(stem + '.bmp', format='BMP')
+    open(stem + '.fnt', 'w').write('\n'.join(lines) + '\n')
+    return W, height, asc
+
+
 # ----------------------------------------------------------------------------- sprite sheets
 # Every sheet is a horizontal strip: frame n (1-based) sits at x = 1 + (n-1)*(w+1), y = 1.
 # The backdrop each frame is drawn on - the colour the game builds its mask from - is white in all of
@@ -506,6 +547,8 @@ def main(game, out, fonts):
     if 'Chicago' in fonts:
         chi = res(fonts['Chicago'])
         print('font_chicago12', nfnt_to_font(chi[('NFNT', 1025)], f'{out}/font_chicago12'))
+    elif 'pixChicago' in fonts:
+        print('font_chicago12 (pixChicago)', ttf_to_font(fonts['pixChicago'], 8, f'{out}/font_chicago12'))
     else:
         print('font_chicago12 (stand-in: New York 14)', nfnt_to_font(app[('NFNT', ny[14])], f'{out}/font_chicago12'))
 
@@ -728,7 +771,18 @@ def find_fonts(search_dirs, game_dir, keep):
                     break
             if name in found:
                 break
-    missing = [n for n in FONT_NAMES if n not in found]
+    # Failing the real Chicago, a free pixel font that looks like it: any file with "chicago" in
+    # its name that ends in .ttf (pixChicago.ttf, or what a download of it is called).
+    if 'Chicago' not in found:
+        for d in search_dirs + [os.path.join(d, 'source_fonts') for d in search_dirs]:
+            try:
+                ttfs = sorted(f for f in os.listdir(d) if f.lower().endswith('.ttf') and 'chicago' in f.lower())
+            except OSError:
+                continue
+            if ttfs:
+                found['pixChicago'] = os.path.join(d, ttfs[0])
+                break
+    missing = [n for n in FONT_NAMES if n not in found and not (n == 'Chicago' and 'pixChicago' in found)]
     if missing:
         print(
             "\n*** %s not found - using the game's own New York font in its place for now. ***\n"
@@ -736,9 +790,9 @@ def find_fonts(search_dirs, game_dir, keep):
             "For the real look, put %s (from a Mac; each holds .rsrc/<font name>) in the same\n"
             "folder as the game's zip, or in Downloads, and run this again.\n"
             % (' and '.join(missing), ' and '.join(n + '.zip' for n in missing)))
-    for n in FONT_NAMES:
+    for n in list(FONT_NAMES) + ['pixChicago']:
         if n in found:
-            print('font file for %-8s %s' % (n, found[n]))
+            print('font file for %-10s %s' % (n, found[n]))
     return found
 
 

@@ -26,8 +26,11 @@ What you need
   * Apeiron_1.0.3.zip (the Mac game, as you downloaded it)
   * Python 3 and Pillow. On Windows, install Python from python.org (tick "Add to PATH"); the
     .bat file below installs Pillow for you.
-  * Optional: Geneva.zip and Chicago.zip (Apple's fonts, from a Mac). Without them the extractor
-    still works and uses the game's own New York font in their place, and tells you so.
+  * Optional fonts. Without them the extractor still works and tells you what it used instead.
+      - pixChicago.ttf (a free pixel font): if it is beside the game zip, in Downloads or in this
+        folder, it is used for the dialogs' Chicago text.
+      - Geneva.zip / Chicago.zip (Apple's fonts, from a Mac): used when present, and they win.
+      - Anything missing is replaced by the game's own New York font.
 
 How to use it
   Windows:  unzip this, then drag Apeiron_1.0.3.zip onto "Extract Apeiron Assets.bat".
