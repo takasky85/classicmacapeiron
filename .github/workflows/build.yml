@@ -45,6 +45,25 @@ jobs:
           echo "exit status $status"
           test "$status" -lt 128
 
+  # The Windows compiler, on every push, because twice now a change has compiled perfectly on
+  # Linux and broken a Windows target that is only built when a release is cut - so the first
+  # anyone knew of it was a failed release. MSVC has no <dirent.h> and no strcasecmp, and those
+  # two cost two round trips through the release workflow to find.
+  #
+  # This compiles against the headless stub rather than real SDL3, so there is no SDL build and
+  # the job takes about a minute. /we4013 turns "undefined; assuming extern returning int" into
+  # an error, which is how a missing POSIX function shows up here - as a warning at compile time
+  # and then an unresolved symbol at link time, which is where strcasecmp was found.
+  msvc:
+    name: compile with MSVC
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: compile every source file
+        shell: cmd
+        run: cl /nologo /c /W3 /we4013 /Fo:nul\ /I tools\test /I src src\*.c
+
   python:
     name: byte-compile the tools
     runs-on: ubuntu-latest

@@ -129,6 +129,11 @@ void mini_text(int x, int y, const char *s, uint8_t ink);
 void mini_text2x(int x, int y, const char *s, uint8_t ink);
 void mini_char(int x, int y, char c, uint8_t ink);
 int  mini_text_width(const char *s);
+/* MSVC has no <strings.h> and spells this one with an underscore. */
+#ifdef _MSC_VER
+#define strcasecmp _stricmp
+#endif
+
 /* Walking a folder without caring which platform this is - see dirs.c. MSVC has no <dirent.h>
  * and MinGW's struct dirent has no d_type, so neither is assumed here. */
 typedef struct { void *h; int err; bool pending; char name[260]; } DirScan;
