@@ -213,6 +213,8 @@ const char *assets_find_dir(char *out, size_t n);   /* the usual places, and the
 void assets_remember_dir(const char *dir);
 bool assets_pick_dir(char *out, size_t n);         /* the system's folder picker */
 void plat_message(const char *title, const char *body);
+void plat_keyboard(bool show);   /* the on-screen keyboard, where there is one (Android) */
+bool mouse_fire(void);           /* any mouse button, or a touch, is down right now */
 bool plat_headless(void);   /* no real display: nothing may wait for a person */
 bool assets_load_sprites(void);
 
@@ -242,6 +244,7 @@ enum { SCALE_INTEGER = 0, SCALE_FIT, SCALE_COUNT };
 extern int  opt_scale;
 extern bool opt_mouse, opt_keyboard, opt_pad, opt_mouse_abs;
 extern int  opt_pad_deadzone;      /* percent */
+extern int  opt_mouse_speed;       /* percent: how far the shooter goes for a given mouse movement */
 extern bool opt_maximize;          /* open filling the screen */
 extern int  opt_start_wave;        /* 1 unless the Enhancements page says otherwise */
 void assets_save_scores(const char *dir);

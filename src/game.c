@@ -2173,7 +2173,7 @@ static bool game_loop(void)
             }
             if (demo_mode || pad_fire() || key_down(SDL_SCANCODE_SPACE) ||
                 key_down(SDL_SCANCODE_LCTRL) || key_down(SDL_SCANCODE_RCTRL) ||
-                (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK))
+                (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) || mouse_fire())
                 fire_shot();
         }
 
@@ -2247,6 +2247,7 @@ static void enter_high_score(int slot, const Image *bg)
     const int OKX = bx + 276, OKY = by + 91, OKW = 68;
 
     SDL_StartTextInput(SDL_GetKeyboardFocus());
+    plat_keyboard(true);           /* Android: the on-screen keyboard, here and only here */
     cursor_set(CURSOR_HAND);
     flush_clicks();
     bool done = false;
@@ -2308,6 +2309,7 @@ static void enter_high_score(int slot, const Image *bg)
         present();
         SDL_Delay(16);
     }
+    plat_keyboard(false);
     snprintf(A.score_row[slot].name, sizeof A.score_row[slot].name, "%s", n ? name : "Player");
 
     sfx(SND_LEVEL_CLEAR);                        /* [EnterHighScore] plays snd 144 on the way out */

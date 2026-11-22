@@ -38,6 +38,7 @@ typedef enum {
 } SDL_Scancode;
 enum { SDL_EVENT_QUIT = 0x100, SDL_EVENT_KEY_DOWN = 0x300, SDL_EVENT_TEXT_INPUT = 0x303,
        SDL_EVENT_MOUSE_MOTION = 0x400, SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401,
+       SDL_EVENT_MOUSE_BUTTON_UP = 0x402,
        SDL_EVENT_GAMEPAD_AXIS_MOTION = 0x650, SDL_EVENT_GAMEPAD_BUTTON_DOWN = 0x651,
        SDL_EVENT_WINDOW_FOCUS_GAINED = 0x20d, SDL_EVENT_WINDOW_FOCUS_LOST = 0x20e };
 typedef struct { Uint8 r, g, b, a; } SDL_Color;
@@ -169,5 +170,7 @@ const char *SDL_GetAndroidInternalStoragePath(void);
 const char *SDL_GetAndroidExternalStoragePath(void);
 Uint32 SDL_GetAndroidExternalStorageState(void);
 int SDL_GetAndroidSDKVersion(void);
+#define SDL_HINT_ENABLE_SCREEN_KEYBOARD "SDL_ENABLE_SCREEN_KEYBOARD"
+bool SDL_ShowScreenKeyboard(SDL_Window *); bool SDL_HideScreenKeyboard(SDL_Window *);
 #define SDL_ANDROID_EXTERNAL_STORAGE_READ 0x01u
 #define SDL_ANDROID_EXTERNAL_STORAGE_WRITE 0x02u

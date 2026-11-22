@@ -21,6 +21,15 @@ int  opt_scale = SCALE_INTEGER;
 bool opt_mouse = true, opt_keyboard = true, opt_pad = true;
 bool opt_mouse_abs = false;        /* read the pointer's position instead of SDL's deltas */
 int  opt_pad_deadzone = 25;
+/* Mouse movement arrives in screen pixels, and the game divides it by how much the 640x480 picture
+ * is magnified - which is right for a pointer you can see and far too slow for the shooter on a
+ * 4K television, where that is 4.5. A TV also gets raw mouse counts with none of the pointer
+ * acceleration a desktop adds. So Android starts faster; Options changes it. */
+#ifdef __ANDROID__
+int  opt_mouse_speed = 300;
+#else
+int  opt_mouse_speed = 100;
+#endif
 bool opt_maximize = false;         /* the window opens at a 2x whole-number scale instead (#17) */
 int  opt_start_wave = 1;
 static int  cur_pack;
@@ -237,6 +246,7 @@ void assets_load_options(const char *dir)
         else if (!strcmp(key, "mouseabs")) opt_mouse_abs = v != 0;
         else if (!strcmp(key, "keyboard")) opt_keyboard = v != 0;
         else if (!strcmp(key, "pad"))      opt_pad = v != 0;
+        else if (!strcmp(key, "mousespeed")) opt_mouse_speed = (v >= 25 && v <= 1600) ? v : opt_mouse_speed;
         else if (!strcmp(key, "deadzone")) opt_pad_deadzone = (v >= 0 && v <= 90) ? v : 25;
         else if (!strcmp(key, "pack"))     { if (have_sheets && v > 0 && v < PACK_COUNT) assets_set_pack(v); }
         else if (!strcmp(key, "debug"))    debug_spawn = v != 0;
@@ -259,9 +269,9 @@ void assets_save_options(const char *dir)
     FILE *f = state_open(dir, "options.txt", "wb");
     if (!f) return;
     fprintf(f, "scale %d\nmouse %d\nkeyboard %d\npad %d\ndeadzone %d\npack %d\ndebug %d\n"
-               "maximize %d\nstartwave %d\nmouseabs %d\n",
+               "maximize %d\nstartwave %d\nmouseabs %d\nmousespeed %d\n",
             opt_scale, opt_mouse, opt_keyboard, opt_pad, opt_pad_deadzone,
-            assets_pack(), debug_spawn, opt_maximize, opt_start_wave, opt_mouse_abs);
+            assets_pack(), debug_spawn, opt_maximize, opt_start_wave, opt_mouse_abs, opt_mouse_speed);
     for (int i = 0; i < CH_COUNT; i++) fprintf(f, "cheat %d %d\n", i, cheat[i] ? 1 : 0);
     for (int i = 0; i < ENH_COUNT; i++) fprintf(f, "enh %d %d\n", i, enh[i] ? 1 : 0);
     fclose(f);

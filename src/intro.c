@@ -698,6 +698,7 @@ static int page_rows(int page, Row *r, int max)
         ADD(ROW_CHECK, 2, 2, "Controller", NULL);
         ADD(ROW_CHECK, 10, 0, "Track the pointer directly",
             "for virtual machines and remote desktops, where mouse movement comes out jerky");
+        ADD(ROW_VALUE, 11, 0, "Mouse speed", NULL);
         ADD(ROW_VALUE, 3, 0, "Stick dead zone", NULL);
         ADD(ROW_NOTE, 0, 0, "In play: Caps Lock or Start pauses, Escape quits to the title.", NULL);
         break;
@@ -774,6 +775,13 @@ static void row_toggle(const Row *r)
         opt_start_wave++;
         if (opt_start_wave > 30) opt_start_wave = 1;
         break;
+    case 11: {
+        static const int steps[] = { 50, 100, 150, 200, 300, 400, 600, 800, 1200 };
+        int i = 0;
+        while (i < 8 && steps[i] <= opt_mouse_speed) i++;       /* the next step up, wrapping */
+        opt_mouse_speed = (steps[i] > opt_mouse_speed) ? steps[i] : steps[0];
+        break;
+    }
     case 3:
         opt_pad_deadzone += 5;
         if (opt_pad_deadzone > 50) opt_pad_deadzone = 5;
@@ -797,7 +805,7 @@ static const int BTN_W = 67, BTN_H = 20, BTN_Y = SCREEN_H - 50;
 #define BTN_CANCEL_X (BTN_OK_X - 12 - BTN_W)
 
 typedef struct {
-    int  scale, deadzone, start_wave, pack;
+    int  scale, deadzone, start_wave, pack, mspeed;
     bool mouse, keyboard, pad, maximize, spawn, mabs;
     bool cheat[CH_COUNT], enh[ENH_COUNT];
 } OptSnapshot;
@@ -805,7 +813,7 @@ typedef struct {
 static void opt_snapshot(OptSnapshot *s)
 {
     s->scale = opt_scale; s->deadzone = opt_pad_deadzone; s->start_wave = opt_start_wave;
-    s->pack = assets_pack();
+    s->pack = assets_pack(); s->mspeed = opt_mouse_speed;
     s->mouse = opt_mouse; s->keyboard = opt_keyboard; s->pad = opt_pad; s->mabs = opt_mouse_abs;
     s->maximize = opt_maximize; s->spawn = debug_spawn;
     memcpy(s->cheat, cheat, sizeof s->cheat);
@@ -815,6 +823,7 @@ static void opt_snapshot(OptSnapshot *s)
 static void opt_restore(const OptSnapshot *s)
 {
     opt_scale = s->scale; opt_pad_deadzone = s->deadzone; opt_start_wave = s->start_wave;
+    opt_mouse_speed = s->mspeed;
     opt_mouse = s->mouse; opt_keyboard = s->keyboard; opt_pad = s->pad;
     if (opt_mouse_abs != s->mabs) { opt_mouse_abs = s->mabs; mouse_abs_changed(); }
     opt_maximize = s->maximize; debug_spawn = s->spawn;
@@ -873,6 +882,7 @@ static void draw_options(int page, const Row *row, int nrow)
         if (r->kind == ROW_VALUE) {
             char buf[64];
             if (r->group == 9) snprintf(buf, sizeof buf, "%s:  %d", r->label, opt_start_wave);
+            else if (r->group == 11) snprintf(buf, sizeof buf, "%s:  %d%%", r->label, opt_mouse_speed);
             else snprintf(buf, sizeof buf, "%s:  %d%%", r->label, opt_pad_deadzone);
             draw_text(&A.geneva9, ROW_X + 22, y + 11, buf, white, 0);
             draw_text(&A.geneva9, ROW_X + 190, y + 11, "click to change", grey, 0);

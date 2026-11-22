@@ -116,6 +116,10 @@ bool plat_init(const char *title)
      * System.exit(0), which from the sofa is an app that will not start. Saying yes here makes it
      * restart the game instead, which is the behaviour a player would expect. */
     SDL_SetHint(SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY, "1");
+    /* The title screen listens for letter keys, which means text input is started for the whole
+     * run, and on Android starting it pops the on-screen keyboard up over the game. Off here;
+     * plat_keyboard() brings it up for the one place a name is typed. */
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
 #endif
     if (!SDL_Init(SDL_INIT_VIDEO)) { SDL_Log("SDL_Init failed: %s", SDL_GetError()); return false; }
     if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) pad_rescan();
@@ -167,6 +171,18 @@ bool plat_init(const char *title)
 }
 
 InputCounts in_count;
+static int mouse_down_count;            /* buttons and fingers currently down */
+
+bool mouse_fire(void) { pump(); return mouse_down_count > 0; }
+
+void plat_keyboard(bool show)
+{
+#ifdef __ANDROID__
+    if (show) SDL_ShowScreenKeyboard(g_win); else SDL_HideScreenKeyboard(g_win);
+#else
+    (void)show;
+#endif
+}
 
 void pump(void)
 {
@@ -185,11 +201,13 @@ void pump(void)
         }
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             if (e.button.which == SDL_TOUCH_MOUSEID) in_count.touch_btn++; else in_count.mouse_btn++;
+            mouse_down_count++;
             button_event = true; have_click = true;
             click_x = (int)((e.button.x * px_density - last_gx) / last_scale);
             click_y = (int)((e.button.y * px_density - last_gy) / last_scale);
         }
-        if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) has_focus = false;
+        if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && mouse_down_count > 0) mouse_down_count--;
+        if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) { has_focus = false; mouse_down_count = 0; }
         if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) has_focus = true;
         if (e.type == SDL_EVENT_TEXT_INPUT && ntyped < (int)sizeof typed - 1)
             for (const char *t = e.text.text; *t; t++)
@@ -331,8 +349,9 @@ void mouse_delta(float *dx, float *dy)
         *dy = ay / s;
         return;
     }
-    *dx = rel_x / s;
-    *dy = rel_y / s;
+    float gain = opt_mouse_speed / 100.0f;
+    *dx = rel_x / s * gain;
+    *dy = rel_y / s * gain;
     rel_x = rel_y = 0;
 }
 
