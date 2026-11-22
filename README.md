@@ -42,6 +42,9 @@ is there and tells you what to run when it is not - but the game itself stops at
 To exercise the port without a display at all, there is a headless harness in `tools/test` that
 needs neither SDL3 nor a window; see [tools/test/README.md](tools/test/README.md).
 
+Just want the extractor? [downloads/apeiron-asset-tools.zip](downloads/apeiron-asset-tools.zip) is
+the script and what it needs, on its own (on Windows, drag the game zip onto the .bat inside).
+
 `tools/extract_assets.py` takes whichever of these you have and does the rest itself:
 
     python3 tools/extract_assets.py Apeiron_1_0_3.zip

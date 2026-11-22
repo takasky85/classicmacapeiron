@@ -114,6 +114,8 @@ jobs:
           python-version: '3.11'
       - name: compile every tool
         run: python3 -m compileall -q tools
+      - name: The downloadable asset tools zip is current
+        run: python3 tools/make_tools_zip.py --check
 
   # The APK is the one build that can break without anybody noticing until a release: nothing
   # else here compiles the game for Android or exercises the Gradle project. Debug build only,
