@@ -178,7 +178,19 @@ bool mouse_fire(void) { pump(); return mouse_down_count > 0; }
 void plat_keyboard(bool show)
 {
 #ifdef __ANDROID__
-    if (show) SDL_ShowScreenKeyboard(g_win); else SDL_HideScreenKeyboard(g_win);
+    /* SDL has no call for the keyboard itself: it shows it when text input starts and the hint
+     * allows, and hides it when text input stops while the hint still allows. So the hint is
+     * switched on around a stop/start to bring it up, and left on across the stop that takes it
+     * away, then back off with text input restarted for the hardware keyboard. */
+    if (show) {
+        SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "1");
+        SDL_StopTextInput(g_win);
+        SDL_StartTextInput(g_win);
+    } else {
+        SDL_StopTextInput(g_win);
+        SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+        SDL_StartTextInput(g_win);
+    }
 #else
     (void)show;
 #endif

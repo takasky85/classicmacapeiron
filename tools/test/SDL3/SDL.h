@@ -171,6 +171,5 @@ const char *SDL_GetAndroidExternalStoragePath(void);
 Uint32 SDL_GetAndroidExternalStorageState(void);
 int SDL_GetAndroidSDKVersion(void);
 #define SDL_HINT_ENABLE_SCREEN_KEYBOARD "SDL_ENABLE_SCREEN_KEYBOARD"
-bool SDL_ShowScreenKeyboard(SDL_Window *); bool SDL_HideScreenKeyboard(SDL_Window *);
 #define SDL_ANDROID_EXTERNAL_STORAGE_READ 0x01u
 #define SDL_ANDROID_EXTERNAL_STORAGE_WRITE 0x02u
