@@ -62,7 +62,9 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - name: compile every source file
         shell: cmd
-        run: cl /nologo /c /W3 /we4013 /Fo:nul\ /I tools\test /I src src\*.c
+        run: |
+          md objs
+          cl /nologo /c /W3 /we4013 /Fo:objs\ /I tools\test /I src src\*.c
 
   python:
     name: byte-compile the tools
