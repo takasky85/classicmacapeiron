@@ -1,5 +1,21 @@
 # Apeiron 1.0.3 — SDL3 port
 
+> ## Getting the game's artwork (you need this to play)
+>
+> The game's artwork, sounds and fonts are Ambrosia Software's, so they are not included here. The
+> game makes its own from the Apeiron 1.0.3 zip, and the easiest way to get that zip is the browser
+> emulator on macintoshrepository.org:
+>
+> 1. Go to the [Apeiron page on macintoshrepository.org](https://www.macintoshrepository.org/5191-apeiron)
+>    and open the [Mac OS 7.5.3 emulator with the Apeiron disk](https://www.macintoshrepository.org/emulate_in_browser.php?macmodel=8&disk1=MacOS753.dsk&disk2=34294_Apeiron-1.0.3.dsk&relativemouse=1).
+> 2. Inside the emulator, drag the **Apeiron folder** onto **The Outside World → Uploads** folder.
+> 3. The emulator makes a zip of it and offers to download it. Keep that zip.
+> 4. Start this game. It looks for the zip (in Downloads, on the Desktop, in Documents, beside the
+>    exe - or in Download on Android) and offers to make the artwork from it; if it does not find
+>    it, it asks you to choose it. It happens once.
+>
+> Details, other ways to make the artwork, and the build instructions are further down.
+
 A playable port of Ambrosia Software's Apeiron (Mac OS, 1995–2000) to SDL3, built by reverse
 engineering the game's own PowerPC binary and extracting its original artwork, fonts and sounds from
 its resource forks. Nothing here is redrawn or re-recorded: every sprite, pattern, palette, font and
