@@ -62,36 +62,58 @@ int main(int argc, char **argv)
         }
     }
 #endif
+    if (!loaded && !plat_headless()) {
+        /* No artwork yet. The usual case is a first run with the Apeiron zip somewhere in
+         * Downloads, so look for it and offer to make the artwork from it. */
+        char zip[1200];
+        if (convert_find_zip(zip, sizeof zip)) {
+            diag_note("apeiron: found a game zip at '%s'", zip);
+            if (assets_offer_zip(zip) && assets_make_from_zip(zip, found, sizeof found) && assets_load(found)) {
+                loaded = true;
+                dir = found;
+                assets_remember_dir(dir);
+            }
+        }
+    }
     if (!loaded) {
-        /* Nothing where it was expected. Rather than exit with a line in a log nobody will read -
-         * and a .app started from the Finder has no console at all - put up the system's folder
-         * picker and take what it is given. The choice is remembered for next time. */
+        /* Nothing where it was expected, and no zip to make it from. Rather than exit with a line
+         * in a log nobody will read - and a .app started from the Finder has no console at all -
+         * ask: the system's picker where there is one, and the browser the game draws itself
+         * where there is not. The choice is remembered for next time. */
         diag_note("no artwork in '%s' - asking", dir);
-        /* The system's folder picker where there is one. Android has none - SDL has no dialog
-         * backend there, and the Storage Access Framework deals in content URIs rather than
-         * paths, which is no use to a game that opens files with fopen - so there it goes
-         * straight to the browser the game draws itself. */
+        /* Android has no picker - SDL has no dialog backend there, and the Storage Access
+         * Framework deals in content URIs rather than paths, which is no use to a game that opens
+         * files with fopen - so there it goes straight to the browser. */
         /* Asked until there is an answer. On a desktop one refusal is taken as a refusal, because
          * there is a console to read and a shell to try again from. On a TV there is neither, so
          * the message is shown and the browser comes back: being returned to the folder list is
          * something a remote control can deal with, and an app that quietly disappeared is not. */
         for (;;) {
-            bool got;
+            int got = 0;
 #ifdef __ANDROID__
-            diag_note("apeiron: opening the built-in folder browser");
+            diag_note("apeiron: opening the built-in file browser");
             got = assets_browse(found, sizeof found);
 #else
-            got = assets_pick_dir(found, sizeof found);
-            if (!got) got = assets_browse(found, sizeof found);
+            plat_message("Where is your copy of Apeiron?",
+                         "This build does not include the game's artwork, fonts or sounds - they are "
+                         "Ambrosia Software's. Choose the Apeiron 1.0.3 zip you downloaded and the "
+                         "game will make its own from it. (Cancel to choose a folder of artwork "
+                         "made with tools/extract_assets.py instead.)");
+            if (assets_pick_zip(found, sizeof found)) got = 2;
+            else if (assets_pick_dir(found, sizeof found)) got = 1;
+            else got = assets_browse(found, sizeof found);
 #endif
-            diag_note("apeiron: browser returned %s, '%s'",
-                    got ? "a folder" : "nothing", got ? found : "");
+            diag_note("apeiron: picker returned %d, '%s'", got, got ? found : "");
+            if (got == 2) {
+                char zip[1200];
+                snprintf(zip, sizeof zip, "%s", found);
+                got = assets_make_from_zip(zip, found, sizeof found) ? 1 : 0;
+            }
             if (got && assets_load(found)) break;
             plat_message("Apeiron needs its artwork",
                          "This build does not include the game's artwork, fonts or sounds - "
-                         "they are Ambrosia Software's. Make an 'assets' folder from your own "
-                         "copy of Apeiron with tools/extract_assets.py, then point the game at "
-                         "it. See README.md.");
+                         "they are Ambrosia Software's. Point the game at your Apeiron 1.0.3 zip "
+                         "and it will make its own. See README.md.");
 #ifndef __ANDROID__
             plat_shutdown(1);
 #else

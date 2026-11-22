@@ -147,10 +147,17 @@ SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *);
 #define SDLCALL
 typedef void (SDLCALL *SDL_DialogFileCallback)(void *, const char * const *, int);
 void SDL_ShowOpenFolderDialog(SDL_DialogFileCallback, void *, SDL_Window *, const char *, bool);
+typedef struct { const char *name; const char *pattern; } SDL_DialogFileFilter;
+void SDL_ShowOpenFileDialog(SDL_DialogFileCallback, void *, SDL_Window *, const SDL_DialogFileFilter *, int, const char *, bool);
 bool SDL_ShowSimpleMessageBox(Uint32, const char *, const char *, SDL_Window *);
 #define SDL_MESSAGEBOX_INFORMATION 0x00000040u
 char *SDL_GetPrefPath(const char *, const char *);
 const char *SDL_GetBasePath(void);
+bool SDL_CreateDirectory(const char *);
+int SDL_strcasecmp(const char *, const char *);
+int SDL_strncasecmp(const char *, const char *, size_t);
+typedef enum { SDL_FOLDER_HOME, SDL_FOLDER_DESKTOP, SDL_FOLDER_DOCUMENTS, SDL_FOLDER_DOWNLOADS } SDL_Folder;
+const char *SDL_GetUserFolder(SDL_Folder);
 const char *SDL_GetCurrentVideoDriver(void);
 float SDL_GetWindowPixelDensity(SDL_Window *);
 #define SDL_WINDOW_HIGH_PIXEL_DENSITY 0x0000000000002000ULL

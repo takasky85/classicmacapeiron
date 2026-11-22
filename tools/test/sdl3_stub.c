@@ -167,6 +167,12 @@ bool SDL_ShowSimpleMessageBox(Uint32 f, const char *t, const char *m, SDL_Window
 { (void)f;(void)w; printf("MSGBOX: %s - %s\n", t?t:"", m?m:""); return true; }
 char *SDL_GetPrefPath(const char *o, const char *a){ (void)o;(void)a; char *p=malloc(8); if(p) snprintf(p,8,"./"); return p; }
 const char *SDL_GetBasePath(void){ return "./"; }
+#include <sys/stat.h>
+#include <strings.h>
+bool SDL_CreateDirectory(const char *p){ char t[1400]; snprintf(t,sizeof t,"%s",p); for (char *q=t+1;*q;q++) if (*q=='/') { *q=0; mkdir(t,0777); *q='/'; } return mkdir(t,0777)==0 || 1; }
+int SDL_strcasecmp(const char *a, const char *b){ return strcasecmp(a,b); }
+int SDL_strncasecmp(const char *a, const char *b, size_t n){ return strncasecmp(a,b,n); }
+const char *SDL_GetUserFolder(SDL_Folder f){ (void)f; return getenv("HOME"); }
 const char *SDL_GetCurrentVideoDriver(void){ const char *v=getenv("STUB_VIDEO"); return v?v:"dummy"; }
 
 /* Android: STUB_PERM = grant (default) | deny | later (answers after 3 s) | never. */
@@ -185,3 +191,6 @@ void *SDL_GetAndroidJNIEnv(void){ return NULL; }
 void *SDL_GetAndroidActivity(void){ return NULL; }
 int SDL_GetAndroidSDKVersion(void){ const char *v=getenv("STUB_SDK"); return v?atoi(v):34; }
 float SDL_GetWindowPixelDensity(SDL_Window *w){ (void)w; return 1.0f; }
+
+void SDL_ShowOpenFileDialog(SDL_DialogFileCallback cb, void *ud, SDL_Window *w, const SDL_DialogFileFilter *f, int n, const char *d, bool m)
+{ (void)w;(void)f;(void)n;(void)d;(void)m; cb(ud, NULL, 0); }

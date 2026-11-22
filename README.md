@@ -10,22 +10,33 @@ Throughout the source, names in `[brackets]` are the functions in the decompiled
 
 ## Build and run
 
-**`assets/` is not in this repository.** It holds Ambrosia's artwork, fonts and sounds, lifted out
-of the game's own resource forks, so a clone starts without it and you make it from your own copy of
-Apeiron. Nothing builds or runs until you have:
+**The artwork is not in this repository, and the game makes it itself.** It is Ambrosia's - artwork,
+sounds and fonts lifted out of the game's own resource forks - so a clone and a release build both
+start without it. Run the game and give it your own copy of Apeiron, the Apeiron 1.0.3 zip for the
+Mac: if the zip is in Downloads, on the Desktop, in Documents, beside the executable (or, on
+Android, in Download) the game finds it and offers to make the artwork; otherwise it asks you to
+choose the zip (a file dialog on a desktop, its own file browser on Android and Google TV). A second
+or two later the artwork is in a folder called `apeiron_classic_assets` - beside the executable, in
+your user profile if that is not writable, or in the app's own folder on Android - and the game
+remembers where. `src/convert.c` does the work: a C port of `tools/extract_assets.py`, written to
+produce the identical folder, file for file, which `tools/test/convert_test.c` makes easy to check.
+
+The menu and dialog fonts are Apple's Geneva and Chicago in the original, which are not in the
+game's files or in this repository, so free pixel fonts stand in for them: pixChicago by Etienne
+Desclides and Geneva 9.1 by Kelsey Higham (SIL Open Font License); see `tools/fonts/ATTRIBUTION.txt`.
+They are drawn once by `tools/gen_font_data.py` into `src/fontdata.c`, which is what the game
+builds the font files from; the credits and licence are also written into the folder it makes.
+
+The same folder can be made on a computer with the Python tool, which is how the C port is checked:
 
     python3 tools/extract_assets.py Apeiron_1_0_3.zip
 
-That unpacks the zip, converts what is in it and writes a folder called `apeiron_classic_assets`
-beside the zip (give a second argument to put it somewhere else). The game also needs Apple's
-Geneva and Chicago fonts, which are not in the game's files or in this repository: put the
-`Geneva.zip` and `Chicago.zip` you get from a Mac beside the game's zip (or in Downloads) and it
-finds them. Without them it still works: free pixel fonts in `tools/fonts` stand in for them (pixChicago by Etienne Desclides, Geneva 9.1 by
-Kelsey Higham under the SIL OFL; see `tools/fonts/ATTRIBUTION.txt`), and anything else missing uses the game's own New York font, and
-it says so. With no arguments at all it looks for `Apeiron*.zip` in Downloads or the current folder,
-and on Windows you can drop the zip onto the script. The game
-looks for `apeiron_classic_assets` (or the older name, `assets`) beside the executable, or in
-Download on Android; a path on the command line works anywhere.
+That unpacks the zip, converts what is in it and writes `apeiron_classic_assets` beside the zip
+(give a second argument to put it somewhere else). If you have Apple's `Geneva.zip` and
+`Chicago.zip` from a Mac, put them beside the game's zip and the Python tool uses the real fonts
+instead of the stand-ins. The game looks for `apeiron_classic_assets` (or the older name,
+`assets`) beside the executable, or in Download on Android; a path on the command line works
+anywhere, and one chosen once is remembered.
 
 The build itself needs SDL3 3.2 or newer:
 
@@ -37,13 +48,13 @@ Without CMake:
     gcc src/*.c -o apeiron $(pkg-config --cflags --libs sdl3)
 
 The build succeeds whether or not `assets/` exists - CMake copies it beside the executable when it
-is there and tells you what to run when it is not - but the game itself stops at startup with
-`missing assets` until it can find them.
+is there and tells you what to run when it is not - and the game, without it, asks for the Apeiron
+zip and makes its own.
 
 To exercise the port without a display at all, there is a headless harness in `tools/test` that
 needs neither SDL3 nor a window; see [tools/test/README.md](tools/test/README.md).
 
-Just want the extractor? [downloads/apeiron-asset-tools.zip](downloads/apeiron-asset-tools.zip) is
+Want the Python extractor on its own? [downloads/apeiron-asset-tools.zip](downloads/apeiron-asset-tools.zip) is
 the script and what it needs, on its own (on Windows, double-click the .bat inside: a small window asks for the game zip; `tools/extract_assets_gui.py` is that window).
 
 `tools/extract_assets.py` takes whichever of these you have and does the rest itself:

@@ -102,21 +102,23 @@ jobs:
           ===================
 
           This build does NOT include the game's artwork or sounds. Those are Ambrosia Software's,
-          and they live in the game's own resource forks - so you make them from your own copy of
-          Apeiron rather than downloading them from here.
+          and they live in the game's own resource forks - so the game makes its own from your
+          copy of Apeiron rather than you downloading them from here.
 
-          apeiron-asset-tools.zip (in this folder) does it: unzip it and double-click
-          "Extract Apeiron Assets.bat" (needs Python 3), pick your Apeiron_1.0.3.zip in the small
-          window and press Extract. It writes a folder called "apeiron_classic_assets" next to
-          your zip. The menu and dialog fonts are free ones
-          that are included - see fonts\ATTRIBUTION.txt - so Apple's fonts are not needed.
+          Just start apeiron.exe. If it finds your Apeiron 1.0.3 zip (in Downloads, on the
+          Desktop, in Documents, or beside the exe) it offers to make the artwork from it; if
+          not, it asks you to choose the zip. That takes a second or two and happens once: the
+          result is a folder called "apeiron_classic_assets" beside apeiron.exe (or in your user
+          profile if that folder is not writable) and the game remembers it.
 
-          Put the "apeiron_classic_assets" folder beside apeiron.exe, or pass its path:
+          The menu and dialog fonts are free ones that are built in - see fonts\ATTRIBUTION.txt
+          (and fonts-credits.txt, which the game writes into the folder it makes) - so Apple's
+          fonts are not needed.
+
+          Already have a folder made with the Python tools (apeiron-asset-tools.zip, or
+          tools/extract_assets.py)? Put it beside apeiron.exe, or pass its path:
 
               apeiron.exe C:\some\where\apeiron_classic_assets
-
-          If the game cannot find it, it puts up a folder picker and remembers what you choose,
-          so you only have to point at it once.
 
           The port and its tools are in this repository; see README.md.
           SDL3 is linked statically and is zlib-licensed - see SDL-LICENSE.txt.
@@ -232,42 +234,43 @@ jobs:
             | - | - |
             | `apeiron-windows-x86_64.zip` | Windows 11 (and 10), 64-bit - one executable with SDL3 linked in, nothing else needed |
             | `apeiron.apk` | a sideloadable APK for Google TV and other 32-bit ARM Android - built against SDL's official prebuilt Android package |
-            | `apeiron-asset-tools.zip` | the script that makes the artwork folder from your own copy of Apeiron, with the free fonts it uses (Windows: double-click the .bat inside, pick your game zip, press Extract) |
+            | `apeiron-asset-tools.zip` | optional: the Python script (and a small window for it) that makes the same artwork folder on a computer, with the free fonts it uses |
 
             ## What is NOT in them
 
-            **The game's artwork and sounds.** Those are Ambrosia Software's, and this port reads
-            them out of the game's own resource forks rather than shipping copies. Make them from
-            your own copy of Apeiron with `apeiron-asset-tools.zip`, or:
+            **The game's artwork and sounds.** Those are Ambrosia Software's, so they are not
+            shipped - the game makes its own from *your* copy of Apeiron, the Apeiron 1.0.3 zip you
+            downloaded for the Mac. Start it, say yes when it offers to make the artwork from the
+            zip it found (or choose the zip yourself), and a second or two later it is running.
+            It does the same on Android and Google TV.
 
-            ```
-            python3 tools/extract_assets.py Apeiron_1.0.3.zip
-            ```
+            The menu and dialog fonts are free ones built into the game: Geneva 9.1 by Kelsey
+            Higham (SIL Open Font License) and pixChicago by Etienne Desclides - see
+            `tools/fonts/ATTRIBUTION.txt`.
 
-            That writes an `apeiron_classic_assets` folder next to the zip. Put it beside the
-            executable on Windows, or in the Download folder on Android, or pass its path as the
-            first argument on Windows. The menu and dialog fonts are free ones, included with the
-            tools: Geneva 9.1 by Kelsey Higham (SIL Open Font License) and pixChicago by Etienne
-            Desclides - see `tools/fonts/ATTRIBUTION.txt`.
+            Prefer to do it by hand? `apeiron-asset-tools.zip` (or
+            `python3 tools/extract_assets.py Apeiron_1.0.3.zip`) writes the identical folder, which
+            can then go beside the executable or in the Download folder.
 
             ## Android and Google TV
 
-            Sideload `apeiron.apk` (the Downloader app, or `adb install apeiron.apk`). The first
-            time the game starts it opens a Settings page for "All files access": turn it on for
-            Apeiron and go Back, and it looks in Download by itself. (Android 6 to 10 asks a plain
-            permission question instead.) If the artwork is somewhere else the game shows a folder
-            browser (remote, gamepad, mouse or touch) and remembers the choice. If your device has
-            no such Settings page, grant it from a computer:
+            Sideload `apeiron.apk` (the Downloader app, or `adb install apeiron.apk`) and put the
+            Apeiron 1.0.3 zip in the Download folder. The first time the game starts it opens a
+            Settings page for "All files access": turn it on for Apeiron and go Back. It then finds
+            the zip, offers to make the artwork from it, and keeps the result in its own folder.
+            (Android 6 to 10 asks a plain permission question instead.) If the zip is somewhere
+            else the game shows a file browser (remote, gamepad, mouse or touch) to find it. If your
+            device has no such Settings page, grant it from a computer:
 
             ```
             adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow
             ```
 
-            or put the folder where no permission is needed:
-            `adb push apeiron_classic_assets /sdcard/Android/data/io.github.takasky85.apeiron/files/`
+            or put the zip where no permission is needed:
+            `adb push Apeiron_1.0.3.zip /sdcard/Android/data/io.github.takasky85.apeiron/files/`
 
             A mouse works, including for steering. Otherwise the d-pad or a stick steers and A
             fires; in the menus the stick moves a pointer and A clicks. Options > Controls has a
             Mouse speed setting.
 
-            Without the artwork folder the game stops at startup and says `missing assets`.
+            Without the zip or an artwork folder the game stops at startup and says what it needs.

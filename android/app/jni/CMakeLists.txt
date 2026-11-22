@@ -10,7 +10,8 @@ find_package(SDL3 REQUIRED CONFIG)
 set(GAME "${CMAKE_CURRENT_SOURCE_DIR}/../../../src")
 add_library(main SHARED
   ${GAME}/main.c ${GAME}/platform.c ${GAME}/assets.c ${GAME}/intro.c ${GAME}/game.c
-  ${GAME}/minifont.c ${GAME}/browse.c ${GAME}/diag.c ${GAME}/dirs.c ${GAME}/droid.c)
+  ${GAME}/minifont.c ${GAME}/browse.c ${GAME}/diag.c ${GAME}/dirs.c ${GAME}/droid.c
+  ${GAME}/convert.c ${GAME}/fontdata.c)
 
 target_include_directories(main PRIVATE ${GAME})
 target_compile_definitions(main PRIVATE

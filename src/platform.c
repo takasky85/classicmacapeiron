@@ -1178,6 +1178,24 @@ bool assets_pick_dir(char *out, size_t n)
     return st.got;
 }
 
+/* The same, for the game's zip: what the player has is the download, and the game makes its own
+ * artwork from it. */
+bool assets_pick_zip(char *out, size_t n)
+{
+    PickState st = { out, n, false, false };
+    if (plat_headless()) return false;
+    static const SDL_DialogFileFilter filters[] = { { "Zip files", "zip" } };
+    SDL_ShowOpenFileDialog(pick_cb, &st, g_win, filters, 1, NULL, false);
+    Uint64 giveup = SDL_GetTicks() + 300000;
+    while (!st.done && SDL_GetTicks() < giveup) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e))
+            if (e.type == SDL_EVENT_QUIT) return false;
+        SDL_Delay(16);
+    }
+    return st.got;
+}
+
 /* A message the player will actually see.
  *
  * SDL has no message-box backend on Android: SDL_ShowSimpleMessageBox returns false there and

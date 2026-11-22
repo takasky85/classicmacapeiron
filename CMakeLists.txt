@@ -51,7 +51,8 @@ message(STATUS "apeiron: build ${APEIRON_BUILD_NAME} ${APEIRON_BUILD_STAMP}")
 
 # ------------------------------------------------------------------------------------- the game
 set(APEIRON_SOURCES src/main.c src/platform.c src/assets.c src/intro.c src/game.c
-                    src/minifont.c src/browse.c src/diag.c src/dirs.c src/droid.c)
+                    src/minifont.c src/browse.c src/diag.c src/dirs.c src/droid.c
+                    src/convert.c src/fontdata.c)
 
 # The Windows executable's icon. MSVC and MinGW both compile a .rc listed as a source; it is an
 # original drawing (tools/make_icons.py), not anything out of the game's own resource fork.
@@ -113,10 +114,8 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/assets)
   endif()
 else()
   message(STATUS
-    "apeiron: no assets/ directory yet - the game will need one to run.\n"
-    "   Extract it from your own copy of Apeiron:\n"
-    "     python3 tools/extract_assets.py Apeiron_1_0_3.zip\n"
-    "   then build again, or pass the path at runtime: ./apeiron path/to/assets")
+    "apeiron: no assets/ directory - fine: the game makes its own artwork from your Apeiron 1.0.3 zip\n"
+    "   the first time it runs (or: python3 tools/extract_assets.py Apeiron_1_0_3.zip)")
 endif()
 
 # --------------------------------------------------------------------------- Windows runtime DLLs

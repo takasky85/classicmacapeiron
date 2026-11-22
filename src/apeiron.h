@@ -143,7 +143,23 @@ void dir_close(DirScan *s);
 bool dir_is_dir(const char *path);
 const char *dir_why(int err);
 
-bool assets_browse(char *out, size_t n);
+int  assets_browse(char *out, size_t n);          /* 0 nothing, 1 a folder of artwork, 2 the game's zip */
+/* ---- convert.c: turning the player's own copy of Apeiron into the artwork folder ----------------
+ * A port of tools/extract_assets.py, so the game can do it itself - on a TV with no computer
+ * about, as much as anywhere. It reads the game's .zip, takes the resource forks out of it and
+ * writes the same folder the Python tool does. The two stand-in fonts are baked in (fontdata.c). */
+typedef struct { const char *stem; int w, h; const unsigned char *bits; const unsigned char *fnt; int fnt_len; } BakedFont;
+extern const BakedFont baked_fonts[2];
+extern const unsigned char *baked_credits, *baked_ofl;
+extern const int baked_credits_len, baked_ofl_len;
+
+typedef void (*ConvSay)(void *ud, const char *line);
+bool convert_zip_ok(const char *zip);                       /* does this zip hold the game? */
+bool convert_zip(const char *zip, const char *out, ConvSay say, void *ud, char *err, size_t errn);
+bool convert_find_zip(char *out, size_t n);                 /* the usual places for a download */
+bool convert_out_dir(char *out, size_t n);                  /* somewhere the artwork can be written */
+bool assets_make_from_zip(const char *zip, char *out, size_t n);   /* browse.c: with a progress screen */
+
 /* The places the game looks for its artwork, so the diagnostics screen can report on each. */
 int  assets_candidate_count(void);
 const char *assets_candidate(int i);
@@ -212,6 +228,8 @@ bool assets_load(const char *dir);
 const char *assets_find_dir(char *out, size_t n);   /* the usual places, and the remembered one */
 void assets_remember_dir(const char *dir);
 bool assets_pick_dir(char *out, size_t n);         /* the system's folder picker */
+bool assets_pick_zip(char *out, size_t n);         /* the system's file picker, for the game's zip */
+bool assets_offer_zip(const char *zip);            /* browse.c: "found this - make the artwork from it?" */
 void plat_message(const char *title, const char *body);
 void plat_keyboard(bool show);   /* the on-screen keyboard, where there is one (Android) */
 bool mouse_fire(void);           /* any mouse button, or a touch, is down right now */
