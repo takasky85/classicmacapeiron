@@ -2041,9 +2041,13 @@ static void move_player(void)
          * of a game, so there is no field edge for it to get stuck against. */
         float rdx = 0, rdy = 0;
         if (demo_mode) demo_move(&rdx, &rdy);      /* the demo steers through the mouse path */
-        else if (opt_mouse) {
+        else if (opt_mouse || touch_active()) {
             mouse_delta(&rdx, &rdy);
-            if (touch_active()) rdx = rdy = 0;     /* fingers steer with the on-screen stick, not as a mouse */
+            /* A finger on the on-screen trackball steers instead of the mouse - one rolls the
+             * ball, the other is nothing, since touch is read as fingers and not as a mouse. */
+            float tx, ty;
+            if (touch_trackball(&tx, &ty)) { rdx = tx; rdy = ty; }
+            else if (!opt_mouse) rdx = rdy = 0;
         }
         if ((rdx != 0 || rdy != 0) && dx == 0 && dy == 0 && !padding) {
             fix_t lim = FIX(player_speed);

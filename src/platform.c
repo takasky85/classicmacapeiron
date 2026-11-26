@@ -48,12 +48,11 @@ static void pad_rescan(void)
     }
 }
 
-static bool touch_stick(float *x, float *y);
+static void detect_phone(void);
 
 bool pad_move(float *x, float *y)
 {
     *x = *y = 0;
-    if (touch_stick(x, y)) return true;          /* a finger on the screen's stick (#51) */
     if (!g_pad || !opt_pad) return false;
     float dz = (float)opt_pad_deadzone / 100.0f;
     float ax = SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
@@ -107,6 +106,9 @@ void plat_shutdown(int code)
 
 void window_set_maximized(bool on);
 
+static bool phone_mode;                 /* a phone or tablet held in the hand: the touch layout */
+bool plat_phone(void) { return phone_mode; }
+
 bool plat_init(const char *title)
 {
     /* Windows will not let a new process steal the foreground unless it is asked to; these are
@@ -153,11 +155,20 @@ bool plat_init(const char *title)
      * coordinates stay in logical units, so everything that reads one multiplies by px_density. */
     SDL_WindowFlags wf = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
                          (opt_maximize ? SDL_WINDOW_MAXIMIZED : 0);
+#ifdef __ANDROID__
+    /* Fullscreen is what makes SDL hide the status and navigation bars (immersive mode); without
+     * it a phone keeps its clock and icons across the top of the game. */
+    wf |= SDL_WINDOW_FULLSCREEN;
+#endif
     if (!SDL_CreateWindowAndRenderer(title, win_w, win_h, wf, &g_win, &g_ren)) {
         SDL_Log("window creation failed: %s", SDL_GetError());
         return false;
     }
     SDL_SetWindowMinimumSize(g_win, SCREEN_W, SCREEN_H);
+#ifdef __ANDROID__
+    SDL_SetWindowFullscreen(g_win, true);
+#endif
+    detect_phone();
     /* Every frame is a full repaint of a 256-colour screen, and the psychedelic mushroom swaps the
      * whole colour table three times a second, so a torn frame shows half of each table. Waiting
      * for the vertical blank is what the original got from the Mac's own screen. */
@@ -170,7 +181,9 @@ bool plat_init(const char *title)
     SDL_FlashWindow(g_win, SDL_FLASH_BRIEFLY);
     if (opt_maximize) window_set_maximized(true);
     g_tex = SDL_CreateTexture(g_ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
-    SDL_SetTextureScaleMode(g_tex, SDL_SCALEMODE_NEAREST);
+    /* A phone draws the picture at whatever size fits, not a whole number of times, and nearest
+     * neighbour at a fractional scale makes some pixels fatter than their neighbours. */
+    SDL_SetTextureScaleMode(g_tex, phone_mode ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     return true;
 }
 
@@ -334,36 +347,88 @@ static void nav_step(void)
 /* A real mouse moved: its position wins, and the ring goes. */
 static void nav_mouse_moved(void) { nav_ring = false; nav_have = false; nav_mouse_seen = true; }
 
-/* ---- the touch controls (#51) -------------------------------------------------------------- */
-enum { FR_NONE = 0, FR_STICK, FR_FIRE, FR_PAUSE, FR_BACK };
+/* ---- the touch controls (#51) --------------------------------------------------------------
+ * A virtual trackball and a fire button. The original is played with a mouse, and a mouse is a
+ * trackball turned over: a finger dragged anywhere in the left zone moves the shooter by how far
+ * it moved, and lifting and putting it down again moves nothing - the same as picking a mouse up.
+ * The right zone fires. On a phone held upright the playfield is on top, the score panel under
+ * it and the two zones in what is left; held sideways they are the two margins either side of the
+ * picture (and over it where there is no margin). */
+enum { FR_NONE = 0, FR_TRACK, FR_FIRE, FR_PAUSE, FR_BACK };
 #define MAX_FINGERS 8
 static struct { SDL_FingerID id; int role; float x, y; bool used; } fingers[MAX_FINGERS];
-static float stick_cx, stick_cy;        /* where the finger that is steering first came down */
-static bool  stick_on;
+static float trk_cx, trk_cy;            /* where the finger that is steering first came down */
+static float trk_dx, trk_dy;            /* how far it has moved since the game last asked, in output pixels */
+static bool  trk_on;
 static bool  fire_touch, back_touch;
 static float t_ow = 1, t_oh = 1;        /* the output size the pixels below are measured in */
-static float t_gx, t_gw;                /* where the picture sits in it */
 
-typedef struct { float u, rest_x, rest_y, fire_x, fire_y, fire_r, pause_x, pause_y, back_x, back_y, btn_r, stick_r; } TouchLayout;
+/* Where the picture and the controls are. present() works it out each frame; the touch code reads it. */
+typedef struct { SDL_FRect src, dst; } Blit;
+static struct {
+    Blit  b[6]; int n;                  /* the pieces of the frame to draw, and where */
+    float scale;                        /* output pixels per game pixel, for the playfield */
+    bool  portrait;                     /* phone upright, in a game: field, panel, controls stacked */
+    float pic_x, pic_w;                 /* the picture's left edge and width (landscape) */
+    float ctl_x, ctl_y, ctl_w, ctl_h;   /* the controls' own area (portrait) */
+} lay;
+
+static void detect_phone(void)
+{
+    const char *f = getenv("APEIRON_PHONE");       /* a way to try the phone layout on a desktop */
+    if (f) phone_mode = atoi(f) != 0;
+#ifdef __ANDROID__
+    else {
+        int n = 0;
+        SDL_TouchID *t = SDL_GetTouchDevices(&n);
+        if (t) SDL_free(t);
+        phone_mode = n > 0 && !SDL_IsTV();         /* a TV box has no screen to touch */
+    }
+#endif
+    if (phone_mode) touch_vis = true;
+}
+
+typedef struct {
+    float u, rest_x, rest_y, ball_r, fire_x, fire_y, fire_r, pause_x, pause_y, back_x, back_y, btn_r;
+    SDL_FRect track, fire;
+} TouchLayout;
 
 static TouchLayout touch_layout(void)
 {
     TouchLayout L;
+    if (lay.portrait) {
+        float u = lay.ctl_w / 8.0f;
+        if (lay.ctl_h / 5.0f < u) u = lay.ctl_h / 5.0f;
+        if (u < 36) u = 36;
+        L.u = u;
+        L.ball_r = 1.5f * u;
+        L.rest_x = lay.ctl_x + lay.ctl_w * 0.27f;  L.rest_y = lay.ctl_y + lay.ctl_h * 0.56f;
+        L.fire_x = lay.ctl_x + lay.ctl_w * 0.74f;  L.fire_y = lay.ctl_y + lay.ctl_h * 0.56f;
+        L.fire_r = 1.3f * u;
+        L.btn_r = 0.5f * u;
+        L.back_x = lay.ctl_x + lay.ctl_w - 0.9f * u;   L.back_y = lay.ctl_y + 0.8f * u;
+        L.pause_x = lay.ctl_x + lay.ctl_w - 2.2f * u;  L.pause_y = L.back_y;
+        L.track = (SDL_FRect){ lay.ctl_x, lay.ctl_y, lay.ctl_w * 0.5f, lay.ctl_h };
+        L.fire  = (SDL_FRect){ lay.ctl_x + lay.ctl_w * 0.5f, lay.ctl_y, lay.ctl_w * 0.5f, lay.ctl_h };
+        return L;
+    }
     float u = t_oh / 8.0f;
     if (u < 36) u = 36;
     L.u = u;
-    float ml = t_gx, mr = t_ow - (t_gx + t_gw);
+    float ml = lay.pic_x, mr = t_ow - (lay.pic_x + lay.pic_w);
     float lx = ml * 0.5f, rx = mr * 0.5f;
-    if (lx < 1.5f * u) lx = 1.5f * u;
-    if (rx < 1.5f * u) rx = 1.5f * u;
+    if (lx < 1.8f * u) lx = 1.8f * u;
+    if (rx < 1.8f * u) rx = 1.8f * u;
     if (lx > t_ow * 0.24f) lx = t_ow * 0.24f;
     if (rx > t_ow * 0.24f) rx = t_ow * 0.24f;
-    L.stick_r = 1.15f * u;
-    L.rest_x = lx;          L.rest_y = t_oh * 0.68f;
-    L.fire_x = t_ow - rx;   L.fire_y = t_oh * 0.68f; L.fire_r = 1.0f * u;
+    L.ball_r = 1.5f * u;
+    L.rest_x = lx;          L.rest_y = t_oh * 0.62f;
+    L.fire_x = t_ow - rx;   L.fire_y = t_oh * 0.62f; L.fire_r = 1.2f * u;
     L.btn_r = 0.5f * u;
     L.back_x = t_ow - 0.9f * u;  L.back_y = 0.8f * u;
     L.pause_x = t_ow - 2.2f * u; L.pause_y = 0.8f * u;
+    L.track = (SDL_FRect){ 0, 0, t_ow * 0.45f, t_oh };
+    L.fire  = (SDL_FRect){ t_ow * 0.55f, 0, t_ow * 0.45f, t_oh };
     return L;
 }
 
@@ -371,11 +436,16 @@ static bool in_circle(float x, float y, float cx, float cy, float r)
 {
     return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r;
 }
+static bool in_rect(float x, float y, SDL_FRect r)
+{
+    return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
 
 static void fingers_clear(void)
 {
     memset(fingers, 0, sizeof fingers);
-    stick_on = fire_touch = back_touch = false;
+    trk_on = fire_touch = back_touch = false;
+    trk_dx = trk_dy = 0;
 }
 
 static void finger_event(const SDL_Event *e)
@@ -393,43 +463,42 @@ static void finger_event(const SDL_Event *e)
         if (slot < 0) return;
         TouchLayout L = touch_layout();
         int role = FR_NONE;
-        if (in_circle(x, y, L.back_x, L.back_y, L.btn_r * 1.3f)) role = FR_BACK;
-        else if (in_circle(x, y, L.pause_x, L.pause_y, L.btn_r * 1.3f)) role = FR_PAUSE;
-        else if (in_circle(x, y, L.fire_x, L.fire_y, L.fire_r * 1.7f)) role = FR_FIRE;
-        else if (x < t_ow * 0.5f && !stick_on) role = FR_STICK;
+        if (in_circle(x, y, L.back_x, L.back_y, L.btn_r * 1.4f)) role = FR_BACK;
+        else if (in_circle(x, y, L.pause_x, L.pause_y, L.btn_r * 1.4f)) role = FR_PAUSE;
+        else if (in_rect(x, y, L.fire)) role = FR_FIRE;
+        else if (in_rect(x, y, L.track) && !trk_on) role = FR_TRACK;
         fingers[slot].used = true; fingers[slot].id = id; fingers[slot].role = role;
         fingers[slot].x = x; fingers[slot].y = y;
         if (role == FR_PAUSE) pause_latch = !pause_latch;
         if (role == FR_BACK) back_touch = true;
         if (role == FR_FIRE) fire_touch = true;
-        if (role == FR_STICK) { stick_on = true; stick_cx = x; stick_cy = y; }
+        if (role == FR_TRACK) { trk_on = true; trk_cx = x; trk_cy = y; }
     } else if (e->type == SDL_EVENT_FINGER_MOTION) {
-        if (slot >= 0) { fingers[slot].x = x; fingers[slot].y = y; }
+        if (slot >= 0) {
+            if (fingers[slot].role == FR_TRACK) { trk_dx += x - fingers[slot].x; trk_dy += y - fingers[slot].y; }
+            fingers[slot].x = x; fingers[slot].y = y;
+        }
     } else {                                         /* UP or CANCELED */
         if (slot < 0) return;
         int role = fingers[slot].role;
         fingers[slot].used = false;
-        if (role == FR_STICK) stick_on = false;
+        if (role == FR_TRACK) trk_on = false;
         if (role == FR_FIRE) fire_touch = false;
         if (role == FR_BACK) back_touch = false;
     }
 }
 
-/* The stick, as the controller's: -1..1 on each axis, 0 inside the dead zone. */
-static bool touch_stick(float *x, float *y)
+/* How far the trackball has been rolled since the last call, in game pixels. False when no finger
+ * is on it, so a mouse or keys plugged into the phone still steer. */
+bool touch_trackball(float *dx, float *dy)
 {
-    if (!in_play || !opt_touch || !stick_on) return false;
-    TouchLayout L = touch_layout();
-    for (int i = 0; i < MAX_FINGERS; i++)
-        if (fingers[i].used && fingers[i].role == FR_STICK) {
-            float dx = (fingers[i].x - stick_cx) / L.stick_r, dy = (fingers[i].y - stick_cy) / L.stick_r;
-            float m = sqrtf(dx * dx + dy * dy);
-            if (m < 0.15f) return false;
-            if (m > 1.0f) { dx /= m; dy /= m; }
-            *x = dx; *y = dy;
-            return true;
-        }
-    return false;
+    *dx = *dy = 0;
+    if (!in_play || !opt_touch) return false;
+    float g = 1.8f / (lay.scale > 0 ? lay.scale : 1.0f);      /* game pixels per output pixel, and then some */
+    bool any = trk_on || trk_dx != 0 || trk_dy != 0;
+    *dx = trk_dx * g; *dy = trk_dy * g;
+    trk_dx = trk_dy = 0;
+    return any;
 }
 
 bool touch_active(void) { return in_play && opt_touch && touch_vis; }
@@ -464,19 +533,19 @@ static void touch_draw(void)
     TouchLayout L = touch_layout();
     float u = L.u;
 
-    /* the stick: a faint disc where it rests, or where the finger came down */
-    float bx = stick_on ? stick_cx : L.rest_x, by = stick_on ? stick_cy : L.rest_y;
-    disc(bx, by, L.stick_r, 255, 255, 255, stick_on ? 46 : 30);
-    disc(bx, by, L.stick_r - 4, 0, 0, 0, stick_on ? 40 : 22);
-    float kx = bx, ky = by;
+    /* the trackball: a ball in its socket; while a finger rolls it the highlight leans the way it goes */
+    disc(L.rest_x, L.rest_y, L.ball_r, 255, 255, 255, trk_on ? 50 : 34);
+    disc(L.rest_x, L.rest_y, L.ball_r - 5, 20, 20, 30, trk_on ? 70 : 50);
+    disc(L.rest_x, L.rest_y, L.ball_r * 0.82f, 120, 140, 200, trk_on ? 70 : 44);
+    float kx = L.rest_x - L.ball_r * 0.28f, ky = L.rest_y - L.ball_r * 0.28f;
     for (int i = 0; i < MAX_FINGERS; i++)
-        if (stick_on && fingers[i].used && fingers[i].role == FR_STICK) {
-            float dx = fingers[i].x - stick_cx, dy = fingers[i].y - stick_cy;
-            float m = sqrtf(dx * dx + dy * dy);
-            if (m > L.stick_r) { dx *= L.stick_r / m; dy *= L.stick_r / m; }
-            kx = bx + dx; ky = by + dy;
+        if (trk_on && fingers[i].used && fingers[i].role == FR_TRACK) {
+            float dx = fingers[i].x - trk_cx, dy = fingers[i].y - trk_cy;
+            float m = sqrtf(dx * dx + dy * dy), lim = L.ball_r * 0.55f;
+            if (m > lim) { dx *= lim / m; dy *= lim / m; }
+            kx = L.rest_x + dx; ky = L.rest_y + dy;
         }
-    disc(kx, ky, 0.5f * u, 255, 255, 255, stick_on ? 150 : 80);
+    disc(kx, ky, 0.34f * u, 255, 255, 255, trk_on ? 150 : 80);
 
     /* fire */
     disc(L.fire_x, L.fire_y, L.fire_r, 255, 80, 60, fire_touch ? 150 : 70);
@@ -587,7 +656,7 @@ void pump(void)
             pause_latch = !pause_latch;
         if (e.type == SDL_EVENT_KEY_DOWN) {
             in_count.key++;
-            if (e.key.scancode != SDL_SCANCODE_UNKNOWN) touch_vis = false;
+            if (e.key.scancode != SDL_SCANCODE_UNKNOWN && !phone_mode) touch_vis = false;
             if (e.key.key == SDLK_F11) toggle_fullscreen();
             else button_event = true;
             /* P, a remote's Menu and its Play/Pause key pause the game (#48). */
@@ -835,14 +904,70 @@ void present(void)
         if (gw > ow) { gw = ow; gh = ow * SCREEN_H / SCREEN_W; }
     }
     int gx = (ow - gw) / 2, gy = (oh - gh) / 2;
+    float fs = (float)gw / (float)SCREEN_W;
+    lay.n = 0; lay.portrait = false;
+
+    if (phone_mode) {
+        /* No desktop pattern and no frame: the picture takes all the room there is, inside the
+         * parts of the screen a notch or a rounded corner leaves alone. */
+        float sx = 0, sy = 0, sw = (float)ow, sh = (float)oh;
+        SDL_Rect sa;
+        if (SDL_GetWindowSafeArea(g_win, &sa) && sa.w > 0 && sa.h > 0) {
+            sx = sa.x * px_density; sy = sa.y * px_density; sw = sa.w * px_density; sh = sa.h * px_density;
+        }
+        if (in_play && sh > sw * 1.05f) {
+            /* Upright: the playfield across the top, the panel's boxes re-laid under it (the panel
+             * is a tall strip, which is no use to a tall screen), and the controls in the rest. */
+            float sc = sw / FIELD_W;
+            if (FIELD_H * sc > sh * 0.60f) sc = sh * 0.60f / FIELD_H;
+            float fw = FIELD_W * sc, fh = FIELD_H * sc;
+            float fx = sx + (sw - fw) / 2, fy = sy;
+            lay.b[lay.n++] = (Blit){ { 0, 0, FIELD_W, FIELD_H }, { fx, fy, fw, fh } };
+            /* where each box and its label sit on the panel (PICT 401), top and height */
+            static const float cell[4][2] = { { 100, 72 }, { 198, 72 }, { 298, 106 }, { 404, 66 } };
+            float rest = sy + sh - (fy + fh);
+            float hsA = sw / 416.0f;                       /* two across */
+            bool two = (72 + 106) * hsA <= rest * 0.5f;
+            float hs = two ? hsA : sw / 832.0f;            /* otherwise all four in a row */
+            float cw = sw / (two ? 2 : 4);
+            float row1 = two ? 72 * hs : 106 * hs, row2 = 106 * hs;
+            float hy = fy + fh;
+            for (int i = 0; i < 4; i++) {
+                int col = two ? i % 2 : i, row = two ? i / 2 : 0;
+                float rh = (two && row == 0) ? row1 : row2;
+                float ry = hy + ((two && row == 1) ? row1 : 0);
+                float dw = 208 * hs, dh = cell[i][1] * hs;
+                lay.b[lay.n++] = (Blit){ { (float)PANEL_X, cell[i][0], 208, cell[i][1] },
+                                         { sx + col * cw + (cw - dw) / 2, ry + (rh - dh) / 2, dw, dh } };
+            }
+            float hud_h = two ? row1 + row2 : row2;
+            lay.portrait = true;
+            lay.scale = sc;
+            lay.ctl_x = sx; lay.ctl_w = sw;
+            lay.ctl_y = hy + hud_h; lay.ctl_h = sy + sh - lay.ctl_y;
+            if (lay.ctl_h < 1) lay.ctl_h = 1;
+            gx = (int)fx; gy = (int)fy; fs = sc;
+        } else {
+            /* Menus, and a game held sideways: the whole 640x480 picture, as big as it will go. */
+            fs = sw / SCREEN_W < sh / SCREEN_H ? sw / SCREEN_W : sh / SCREEN_H;
+            gw = (int)(SCREEN_W * fs); gh = (int)(SCREEN_H * fs);
+            gx = (int)(sx + (sw - gw) / 2); gy = (int)(sy + (sh - gh) / 2);
+            fs = (float)gw / SCREEN_W;
+            lay.b[lay.n++] = (Blit){ { 0, 0, SCREEN_W, SCREEN_H }, { (float)gx, (float)gy, (float)gw, (float)gh } };
+            lay.scale = fs;
+        }
+    } else {
+        lay.b[lay.n++] = (Blit){ { 0, 0, SCREEN_W, SCREEN_H }, { (float)gx, (float)gy, (float)gw, (float)gh } };
+        lay.scale = fs;
+    }
+    lay.pic_x = (float)gx; lay.pic_w = (float)gw;
     /* The scale the picture is actually drawn at, which "Fill the window" makes fractional. The
      * frame and the desktop pattern around it are drawn at this too, not at the whole-number `s`:
      * using `s` there left the lavender rings the wrong thickness and sitting away from the edge
      * of the picture, which is what the odd left border was (#21). */
-    float fs = (float)gw / (float)SCREEN_W;
     last_scale = fs > 0 ? fs : 1.0f;
     last_gx = gx; last_gy = gy;
-    t_ow = (float)ow; t_oh = (float)oh; t_gx = (float)gx; t_gw = (float)gw;
+    t_ow = (float)ow; t_oh = (float)oh;
 
     /* Asked of the window rather than remembered from an event: a focus change that arrives while
      * something else is draining the queue used to leave the flag stuck off, and the hand with it. */
@@ -864,7 +989,7 @@ void present(void)
 
     SDL_SetRenderDrawColor(g_ren, 0, 0, 0, 255);
     SDL_RenderClear(g_ren);
-    if (gx > 0 || gy > 0) {
+    if (!phone_mode && (gx > 0 || gy > 0)) {
         if (margin_pat && margin_tex) {
             for (int i = 0; i < margin_pat->w * margin_pat->h; i++) margin_argb[i] = lut[margin_pat->px[i]];
             SDL_UpdateTexture(margin_tex, NULL, margin_argb, margin_pat->w * 4);
@@ -883,8 +1008,7 @@ void present(void)
             }
         }
     }
-    SDL_FRect dst = { (float)gx, (float)gy, (float)gw, (float)gh };
-    SDL_RenderTexture(g_ren, g_tex, NULL, &dst);
+    for (int i = 0; i < lay.n; i++) SDL_RenderTexture(g_ren, g_tex, &lay.b[i].src, &lay.b[i].dst);
     nav_draw((float)gx, (float)gy, fs);
     touch_draw();
     SDL_RenderPresent(g_ren);

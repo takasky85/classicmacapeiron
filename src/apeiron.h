@@ -87,6 +87,8 @@ bool pad_fire(void);
 bool pad_start(void);                     /* Start: menu accept */
 bool pause_requested(void);               /* Caps Lock on, or a pause button / key / click / tap toggled on */
 void pause_clear(void);
+bool touch_trackball(float *dx, float *dy);  /* the on-screen trackball: rolled this far since last asked, if a finger is on it */
+bool plat_phone(void);                   /* a phone or tablet in the hand: touch layout, no desktop frame */
 bool touch_active(void);                  /* in a game, touch controls on, and the last input was a finger */
 bool touch_fire(void);                    /* a finger on the on-screen fire button */
 void input_play(bool on);                 /* a game is (not) running: touch controls live, menu pointer off */

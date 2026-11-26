@@ -58,6 +58,14 @@ public class MainActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= 26) fixCapturedClicks();
+        // Draw under a notch or camera cut-out instead of leaving a black bar there; the game asks
+        // SDL for the safe area and keeps its controls and picture out of the cut-out itself.
+        if (Build.VERSION.SDK_INT >= 28) {
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
     }
 
     @TargetApi(26)

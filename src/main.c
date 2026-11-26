@@ -81,8 +81,25 @@ int main(int argc, char **argv)
         for (;;) {
             int got = 0;
 #ifdef __ANDROID__
-            diag_note("apeiron: opening the artwork start screen");
-            got = assets_start(found, sizeof found);
+            if (plat_phone()) {
+                diag_note("apeiron: opening the artwork start screen");
+                got = assets_start(found, sizeof found);
+            } else {
+                /* A TV: no touch, and often no system file picker either, so the start screen's
+                 * buttons would lead nowhere. Ask for storage access, look in Downloads once more,
+                 * and otherwise go straight to the file browser a remote can drive. */
+                diag_note("apeiron: no touch screen - storage access, then the file browser");
+                droid_ask_storage();
+                char zip[1200];
+                if (convert_find_zip(zip, sizeof zip) && assets_offer_zip(zip)) {
+                    snprintf(found, sizeof found, "%s", zip);
+                    got = 2;
+                } else {
+                    nav_keys(false);                 /* the browser reads the arrows and buttons itself */
+                    got = assets_browse(found, sizeof found);
+                    nav_keys(true);
+                }
+            }
 #else
             plat_message("Where is your copy of Apeiron?",
                          "This build does not include the game's artwork, fonts or sounds - they are "

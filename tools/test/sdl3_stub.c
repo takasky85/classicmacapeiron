@@ -43,8 +43,9 @@ bool SDL_SetRenderDrawBlendMode(SDL_Renderer*r,SDL_BlendMode m){ (void)r; (void)
 bool SDL_RenderClear(SDL_Renderer*r){ for(int i=0;i<OW*OH;i++) outbuf[i]=drawcol; return true; }
 bool SDL_RenderFillRect(SDL_Renderer*r,const SDL_FRect*d){ for(int y=(int)d->y;y<(int)(d->y+d->h);y++) for(int x=(int)d->x;x<(int)(d->x+d->w);x++) if(x>=0&&y>=0&&x<OW&&y<OH){ if(drawA>=255) outbuf[y*OW+x]=drawcol; else { uint32_t o=outbuf[y*OW+x]; uint32_t r=0xFF000000u; for(int sh=0;sh<24;sh+=8){ int a=(o>>sh)&255,b=(drawcol>>sh)&255; r|=(uint32_t)((a*(255-drawA)+b*drawA)/255)<<sh; } outbuf[y*OW+x]=r; } } return true; }
 bool SDL_RenderTexture(SDL_Renderer*r,SDL_Texture*t,const SDL_FRect*a,const SDL_FRect*d){
+  float sx=a?a->x:0, sy=a?a->y:0, sw=a?a->w:(float)t->w, sh=a?a->h:(float)t->h;
   for(int y=(int)d->y;y<(int)(d->y+d->h);y++) for(int x=(int)d->x;x<(int)(d->x+d->w);x++){ if(x<0||y<0||x>=OW||y>=OH) continue;
-    int u=(int)((x-d->x)*t->w/d->w), v=(int)((y-d->y)*t->h/d->h); outbuf[y*OW+x]=t->px[v*t->w+u]; } return true; }
+    int u=(int)(sx+(x-d->x)*sw/d->w), v=(int)(sy+(y-d->y)*sh/d->h); outbuf[y*OW+x]=t->px[v*t->w+u]; } return true; }
 bool SDL_RenderTextureTiled(SDL_Renderer*r,SDL_Texture*t,const SDL_FRect*a,float sc,const SDL_FRect*d){
   for(int y=(int)d->y;y<(int)(d->y+d->h);y++) for(int x=(int)d->x;x<(int)(d->x+d->w);x++){ if(x<0||y<0||x>=OW||y>=OH) continue;
     int u=(int)floorf((x-d->x)/sc)%t->w, v=(int)floorf((y-d->y)/sc)%t->h; outbuf[y*OW+x]=t->px[v*t->w+u]; } return true; }
@@ -142,6 +143,9 @@ unsigned int SDL_GetRelativeMouseState(float *x, float *y){
 }
 
 void SDL_free(void *p){ free(p); }
+SDL_TouchID *SDL_GetTouchDevices(int *count){ if(count) *count=0; return NULL; }
+bool SDL_IsTV(void){ return false; }
+bool SDL_GetWindowSafeArea(SDL_Window *w, SDL_Rect *r){ (void)w; if(!getenv("SAFE_INSET")||!r) return false; int n=atoi(getenv("SAFE_INSET")); r->x=n; r->y=n; r->w=OW-2*n; r->h=OH-2*n; return true; }
 
 SDL_AudioDeviceID SDL_OpenAudioDevice(SDL_AudioDeviceID d, const SDL_AudioSpec *sp){ (void)d;(void)sp; return 0; }
 SDL_AudioStream *SDL_CreateAudioStream(const SDL_AudioSpec *a, const SDL_AudioSpec *b){ (void)a;(void)b; return 0; }

@@ -17,6 +17,7 @@ typedef Uint32 SDL_AudioDeviceID; typedef Uint32 SDL_MouseButtonFlags;
 #define SDL_PIXELFORMAT_INDEX8 2
 #define SDL_TEXTUREACCESS_STREAMING 1
 #define SDL_SCALEMODE_NEAREST 0
+#define SDL_SCALEMODE_LINEAR 1
 #define SDL_AUDIO_U8 0x0008u
 #define SDL_AUDIO_BYTESIZE(x) (((x) & 0xFFu) / 8)
 #define SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK 0xFFFFFFFFu
@@ -90,6 +91,9 @@ void SDL_WarpMouseInWindow(SDL_Window *, float, float);
 bool SDL_GetWindowRelativeMouseMode(SDL_Window *);
 unsigned int SDL_GetRelativeMouseState(float *, float *);
 void SDL_free(void *);
+SDL_TouchID *SDL_GetTouchDevices(int *count);
+bool SDL_IsTV(void);
+bool SDL_GetWindowSafeArea(SDL_Window *, SDL_Rect *);
 typedef unsigned int SDL_AudioDeviceID;
 #define SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK 0xFFFFFFFFu
 SDL_AudioDeviceID SDL_OpenAudioDevice(SDL_AudioDeviceID, const SDL_AudioSpec *);
@@ -151,6 +155,7 @@ bool SDL_SetWindowSize(SDL_Window *, int, int);
 bool SDL_GetWindowSize(SDL_Window *, int *, int *);
 void SDL_PumpEvents(void);
 #define SDL_WINDOW_MAXIMIZED 0x80u
+#define SDL_WINDOW_FULLSCREEN 0x1u
 #define SDL_WINDOW_INPUT_FOCUS 0x200u
 #define SDL_WINDOW_MOUSE_FOCUS 0x400u
 SDL_WindowFlags SDL_GetWindowFlags(SDL_Window *);

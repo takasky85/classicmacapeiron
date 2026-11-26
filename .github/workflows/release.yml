@@ -261,9 +261,13 @@ jobs:
             Android's own file picker (the Downloads folder is the usual place). The result is kept
             in the game's own folder, so this happens once.
 
-            **Phone:** touch controls appear on screen - a stick on the left, a fire button, and
-            pause and back buttons. Touch also works in all the menus. Options has a setting to hide
-            the controls.
+            **Phone:** hold it either way up. Upright, the playfield fills the top of the screen, the
+            score, bonus, lives and wave boxes sit under it, and the controls take the rest: drag a
+            thumb on the **trackball** (left) to move the shooter, the way you would roll a mouse,
+            and press **fire** (right). Sideways, the whole picture fills the screen with the
+            trackball and fire button in the margins either side. Pause and back are the two small
+            buttons in the corner. Touch also works in all the menus, and Options has a setting to
+            hide the controls.
 
             **Google TV and controllers:** the remote's d-pad or a controller's stick moves a focus
             ring through the menus, the centre button or A selects, and Back goes back. In play the
