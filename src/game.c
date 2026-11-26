@@ -206,6 +206,13 @@ static int fly_count(int kind, int data)
     return n;
 }
 static int lives_in_flight(void) { return fly_count(FLY_LIFE, -1); }
+/* fly_count only sees icons that hide a box slot; the respawn icon hides nothing, so ask directly */
+static bool respawn_icon_alive(void)
+{
+    for (int i = 0; i < MAX_ENT; i++)
+        if (ent[i].alive && ent[i].type == E_FLYICON && ent[i].hits == FLY_RESPAWN) return true;
+    return false;
+}
 
 
 static void ent_clear(EType t)
@@ -868,6 +875,10 @@ static void start_level(void)
     set_monitor_clut(A.game_clut, true);
 
     ticks = 0;
+    /* ticks starts over, so anything stamped with the old count is stale: a death stamped at tick
+     * 3000 would not be 180 ticks old until the new wave reached tick 3180, and a shooter killed
+     * as the last segment fell stayed gone for that long (#44). */
+    death_tick = 0; flash_until = 0;
     pede_left = 0;
     shots_out = 0;
     last_shot = 0;
@@ -1471,7 +1482,8 @@ static void update_entities(void)
         /* [YummieMoveProc]: gravity of a pixel a frame per frame, a floor bounce a pixel slower
          * each time, and it is gone once the bounce drops below four. */
         case E_YUMMIE: {
-            if (e->vx) e->vy += FIX(1);
+            if (e->vx || e->vy < 0) e->vy += FIX(1);   /* a coin thrown straight up (no sideways speed
+                                                         * rolled) kept its speed all the way to the top (#46) */
             e->y += e->vy; e->x += e->vx;
             int ix = FIX_WHOLE(e->x), iy = FIX_WHOLE(e->y);
             if (iy + 16 >= FIELD_H) {
@@ -1751,7 +1763,12 @@ static void house_keeping(void)
     }
 
     if (player_dead) {
-        if (respawn_flying) return;             /* the replacement is in the air */
+        if (respawn_flying) {                   /* the replacement is in the air - if it still is */
+            if (respawn_icon_alive()) return;
+            respawn_flying = false;             /* the icon is gone (#44): do not wait for it */
+            player_dead = false;
+            return;
+        }
         if (ticks - death_tick > RESPAWN_TICKS) {
             /* [GameLoop]'s respawn runs CountOffShrooms(0x91) - "Oh no" first, waited out, then
              * the mushrooms restored one at a time - so nothing overlaps the death sound. */
@@ -2024,7 +2041,10 @@ static void move_player(void)
          * of a game, so there is no field edge for it to get stuck against. */
         float rdx = 0, rdy = 0;
         if (demo_mode) demo_move(&rdx, &rdy);      /* the demo steers through the mouse path */
-        else if (opt_mouse) mouse_delta(&rdx, &rdy);
+        else if (opt_mouse) {
+            mouse_delta(&rdx, &rdy);
+            if (touch_active()) rdx = rdy = 0;     /* fingers steer with the on-screen stick, not as a mouse */
+        }
         if ((rdx != 0 || rdy != 0) && dx == 0 && dy == 0 && !padding) {
             fix_t lim = FIX(player_speed);
             fix_t mvx = (fix_t)(rdx * 65536.0f), mvy = (fix_t)(rdy * 65536.0f);
@@ -2154,8 +2174,8 @@ static void pause_game(void)
     draw_image(&A.paused, (SCREEN_W - A.paused.w) / 2, (SCREEN_H - A.paused.h) / 3);
     set_entries();
 
-    while (caps_lock_down() || pad_start()) {
-        if (key_down(SDL_SCANCODE_ESCAPE)) { quit_to_title = true; break; }
+    while (pause_requested()) {
+        if (key_down(SDL_SCANCODE_ESCAPE)) { quit_to_title = true; pause_clear(); break; }
         pump();
         present();
         SDL_Delay(16);
@@ -2181,7 +2201,8 @@ bool demo_mode;
 static Uint64 demo_start;      
 /* ---- the main game loop ------------------------------------------------------------------------ */
 /* [GameLoop]: returns true when the player got far enough for the special ending. */
-static bool game_loop(void)
+static bool game_loop(void);
+static bool game_loop_inner(void)
 {
     Uint64 next = SDL_GetTicks();
     for (;;) {
@@ -2204,7 +2225,7 @@ static bool game_loop(void)
         /* [GameLoop] bumps the counter once per tick change and [GameHouseKeeping] once per frame,
          * so it advances by two a frame - which keeps the tick-based timers in real 60ths. */
         /* [GameHouseKeeping] checks [CapsLockDown] every frame and calls [PauseGame] on it. */
-        if (caps_lock_down() || pad_start()) {
+        if (pause_requested()) {
             pause_game();
             if (quit_to_title) return false;
             next = SDL_GetTicks();
@@ -2266,9 +2287,11 @@ static bool game_loop(void)
                         }
                 sfx(SND_EXPLOSION);
             }
-            if ((demo_mode && demo_trigger()) || (!demo_mode && (pad_fire() || key_down(SDL_SCANCODE_SPACE))) ||
+            if ((demo_mode && demo_trigger()) ||
+                (!demo_mode && (pad_fire() || touch_fire() || key_down(SDL_SCANCODE_SPACE) ||
+                                key_down(SDL_SCANCODE_SELECT))) ||    /* a remote's centre button */
                 key_down(SDL_SCANCODE_LCTRL) || key_down(SDL_SCANCODE_RCTRL) ||
-                (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) || mouse_fire())
+                mouse_fire())
                 fire_shot();
         }
 
@@ -2542,6 +2565,15 @@ void run_attract(void)
     sfx_halt_all();
     fade_to_color(15, RGB_BLACK);
     cursor_set(CURSOR_HAND);
+}
+
+/* The touch controls and the pause toggle are live only while a game is being played. */
+static bool game_loop(void)
+{
+    input_play(!demo_mode);
+    bool r = game_loop_inner();
+    input_play(false);
+    return r;
 }
 
 void new_game(void)                          /* [NewGame] */

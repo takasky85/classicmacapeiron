@@ -49,19 +49,9 @@ int main(int argc, char **argv)
         assets_load_options(dir);
     }
     bool loaded = assets_load(dir);
-#ifdef __ANDROID__
-    if (!loaded) {
-        /* Not found with what the app can read unaided. The Download folder is the obvious place
-         * and Android keeps it behind a permission, so ask once - and only now, so a player whose
-         * artwork is already in the app's own folder is never asked for anything. */
-        droid_ask_storage();
-        if (argc <= 1) {
-            dir = assets_find_dir(found, sizeof found);
-            diag_note("apeiron: after the permission, artwork guess '%s'", dir ? dir : "(none)");
-            loaded = assets_load(dir);
-        }
-    }
-#endif
+    /* On Android nothing asks for storage permission up front: a phone should not be sent to a
+     * Settings page before it has been shown what the game needs. The start screen below has the
+     * system's own file picker, which needs none, and a button that does ask. */
     if (!loaded && !plat_headless()) {
         /* No artwork yet. The usual case is a first run with the Apeiron zip somewhere in
          * Downloads, so look for it and offer to make the artwork from it. */
@@ -91,8 +81,8 @@ int main(int argc, char **argv)
         for (;;) {
             int got = 0;
 #ifdef __ANDROID__
-            diag_note("apeiron: opening the built-in file browser");
-            got = assets_browse(found, sizeof found);
+            diag_note("apeiron: opening the artwork start screen");
+            got = assets_start(found, sizeof found);
 #else
             plat_message("Where is your copy of Apeiron?",
                          "This build does not include the game's artwork, fonts or sounds - they are "
@@ -132,6 +122,7 @@ int main(int argc, char **argv)
     for (int i = 0; i < 256; i++) shown[i] = table[i] = (Rgb){ 0xC000, 0xC000, 0xC000 };
     memset(fb, 0, sizeof fb);
 
+    nav_keys(true);                          /* a remote or a controller can drive the menus from here on */
     apeiron_intro();
 
     for (;;) {                               /* [MainLoop] */

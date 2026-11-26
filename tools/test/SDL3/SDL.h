@@ -21,6 +21,11 @@ typedef Uint32 SDL_AudioDeviceID; typedef Uint32 SDL_MouseButtonFlags;
 #define SDL_AUDIO_BYTESIZE(x) (((x) & 0xFFu) / 8)
 #define SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK 0xFFFFFFFFu
 #define SDL_BUTTON_LMASK 1u
+#define SDL_BUTTON_LEFT 1
+#define SDL_BUTTON_MIDDLE 2
+#define SDL_BUTTON_RIGHT 3
+typedef enum { SDL_BLENDMODE_NONE = 0, SDL_BLENDMODE_BLEND = 1 } SDL_BlendMode;
+bool SDL_SetRenderDrawBlendMode(SDL_Renderer *, SDL_BlendMode);
 #define SDLK_ESCAPE 0x1bu
 #define SDLK_AC_BACK 0x4000010eu
 #define SDLK_RETURN 0x0du
@@ -32,7 +37,7 @@ typedef enum {
     SDL_SCANCODE_F5 = 62, SDL_SCANCODE_F6 = 63, SDL_SCANCODE_F7 = 64, SDL_SCANCODE_F8 = 65,
     SDL_SCANCODE_M = 16, SDL_SCANCODE_N = 17, SDL_SCANCODE_S = 22,
     SDL_SCANCODE_W = 26, SDL_SCANCODE_X = 27, SDL_SCANCODE_B = 5, SDL_SCANCODE_Q = 20, SDL_SCANCODE_RETURN = 40, SDL_SCANCODE_KP_ENTER = 88, SDL_SCANCODE_ESCAPE = 41,
-    SDL_SCANCODE_SPACE = 44, SDL_SCANCODE_RIGHT = 79, SDL_SCANCODE_LEFT = 80,
+    SDL_SCANCODE_SPACE = 44, SDL_SCANCODE_P = 19, SDL_SCANCODE_MENU = 118, SDL_SCANCODE_SELECT = 119, SDL_SCANCODE_MEDIA_PLAY_PAUSE = 262, SDL_SCANCODE_RIGHT = 79, SDL_SCANCODE_LEFT = 80,
     SDL_SCANCODE_AC_BACK = 282,              /* where Android sends a Back button */
     SDL_SCANCODE_DOWN = 81, SDL_SCANCODE_UP = 82, SDL_SCANCODE_LCTRL = 224, SDL_SCANCODE_RCTRL = 228,
     SDL_NUM_SCANCODES = 512
@@ -41,16 +46,21 @@ enum { SDL_EVENT_QUIT = 0x100, SDL_EVENT_KEY_DOWN = 0x300, SDL_EVENT_TEXT_INPUT 
        SDL_EVENT_MOUSE_MOTION = 0x400, SDL_EVENT_MOUSE_BUTTON_DOWN = 0x401,
        SDL_EVENT_MOUSE_BUTTON_UP = 0x402,
        SDL_EVENT_GAMEPAD_AXIS_MOTION = 0x650, SDL_EVENT_GAMEPAD_BUTTON_DOWN = 0x651,
+       SDL_EVENT_FINGER_DOWN = 0x700, SDL_EVENT_FINGER_UP = 0x701, SDL_EVENT_FINGER_MOTION = 0x702,
+       SDL_EVENT_FINGER_CANCELED = 0x703,
        SDL_EVENT_WINDOW_FOCUS_GAINED = 0x20d, SDL_EVENT_WINDOW_FOCUS_LOST = 0x20e };
 typedef struct { Uint8 r, g, b, a; } SDL_Color;
 typedef struct { int ncolors; SDL_Color *colors; } SDL_Palette;
 typedef struct SDL_Surface { SDL_PixelFormat format; int w, h, pitch; void *pixels; SDL_Palette *pal; } SDL_Surface;
 typedef struct { SDL_AudioFormat format; int channels; int freq; } SDL_AudioSpec;
-typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint32 scancode; SDL_Keycode key; } SDL_KeyboardEvent;
+typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint32 scancode; SDL_Keycode key; bool repeat; } SDL_KeyboardEvent;
+typedef Uint64 SDL_FingerID; typedef Uint64 SDL_TouchID;
+typedef struct { Uint32 type; Uint32 pad; Uint64 ts; SDL_TouchID touchID; SDL_FingerID fingerID; float x, y, dx, dy, pressure; Uint32 windowID; } SDL_TouchFingerEvent;
+typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 which; Uint8 button, down; } SDL_GamepadButtonEvent;
 typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint8 button, down; Uint8 clicks, pad2; float x, y; } SDL_MouseButtonEvent;
 typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid, which; Uint32 state; float x, y, xrel, yrel; } SDL_MouseMotionEvent;
 typedef struct { Uint32 type; Uint32 pad; Uint64 ts; Uint32 wid; const char *text; } SDL_TextInputEvent;
-typedef union SDL_Event { Uint32 type; SDL_KeyboardEvent key; SDL_MouseButtonEvent button; SDL_MouseMotionEvent motion; SDL_TextInputEvent text; Uint8 padding[128]; } SDL_Event;
+typedef union SDL_Event { Uint32 type; SDL_KeyboardEvent key; SDL_MouseButtonEvent button; SDL_MouseMotionEvent motion; SDL_TextInputEvent text; SDL_TouchFingerEvent tfinger; SDL_GamepadButtonEvent gbutton; Uint8 padding[128]; } SDL_Event;
 typedef struct { int x, y, w, h; } SDL_Rect; typedef struct { float x, y, w, h; } SDL_FRect;
 bool SDL_Init(SDL_InitFlags); bool SDL_InitSubSystem(SDL_InitFlags); void SDL_Quit(void); const char *SDL_GetError(void);
 void SDL_Log(const char *fmt, ...);
@@ -86,6 +96,7 @@ SDL_AudioDeviceID SDL_OpenAudioDevice(SDL_AudioDeviceID, const SDL_AudioSpec *);
 SDL_AudioStream *SDL_CreateAudioStream(const SDL_AudioSpec *, const SDL_AudioSpec *);
 bool SDL_BindAudioStream(SDL_AudioDeviceID, SDL_AudioStream *);
 bool SDL_ClearAudioStream(SDL_AudioStream *);
+bool SDL_SetAudioStreamGain(SDL_AudioStream *, float);
 bool SDL_SetAudioStreamFormat(SDL_AudioStream *, const SDL_AudioSpec *, const SDL_AudioSpec *);
 bool SDL_RaiseWindow(SDL_Window *);
 #define SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED "SDL_WINDOW_ACTIVATE_WHEN_RAISED"
@@ -174,6 +185,10 @@ static inline int SDL_SetAtomicInt(SDL_AtomicInt *a, int v) { int o = a->value; 
 static inline int SDL_GetAtomicInt(SDL_AtomicInt *a) { return a->value; }
 typedef void (SDLCALL *SDL_RequestAndroidPermissionCallback)(void *userdata, const char *permission, bool granted);
 bool SDL_RequestAndroidPermission(const char *, SDL_RequestAndroidPermissionCallback, void *);
+typedef struct SDL_IOStream SDL_IOStream;
+SDL_IOStream *SDL_IOFromFile(const char *, const char *);
+size_t SDL_ReadIO(SDL_IOStream *, void *, size_t);
+bool SDL_CloseIO(SDL_IOStream *);
 const char *SDL_GetAndroidInternalStoragePath(void);
 const char *SDL_GetAndroidExternalStoragePath(void);
 Uint32 SDL_GetAndroidExternalStorageState(void);

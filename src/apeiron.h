@@ -84,7 +84,16 @@ bool pad_present(void);
 const char *pad_name(void);
 bool pad_move(float *x, float *y);        /* left stick or d-pad, past the dead zone */
 bool pad_fire(void);
-bool pad_start(void);                     /* Start: pauses, like Caps Lock */
+bool pad_start(void);                     /* Start: menu accept */
+bool pause_requested(void);               /* Caps Lock on, or a pause button / key / click / tap toggled on */
+void pause_clear(void);
+bool touch_active(void);                  /* in a game, touch controls on, and the last input was a finger */
+bool touch_fire(void);                    /* a finger on the on-screen fire button */
+void input_play(bool on);                 /* a game is (not) running: touch controls live, menu pointer off */
+/* The menu pointer a remote or controller drives. Screens with a few places to go list them. */
+typedef struct { int x, y, w, h; } NavTarget;
+void nav_targets(const NavTarget *t, int n, int first);   /* n = 0 clears */
+void nav_keys(bool on);
 void mouse_delta(float *dx, float *dy);   /* movement since the last call, in screen pixels */
 bool take_click(int *x, int *y);
 void flush_clicks(void);
@@ -228,9 +237,12 @@ bool assets_load(const char *dir);
 const char *assets_find_dir(char *out, size_t n);   /* the usual places, and the remembered one */
 void assets_remember_dir(const char *dir);
 bool assets_pick_dir(char *out, size_t n);         /* the system's folder picker */
-bool assets_pick_zip(char *out, size_t n);         /* the system's file picker, for the game's zip */
+bool assets_pick_zip(char *out, size_t n);                    /* the system's file picker, for the game's zip */
+bool plat_import_zip(const char *uri, char *out, size_t n);   /* a content:// URI from Android's picker, copied to a file */
+int  assets_start(char *out, size_t n);                       /* Android / TV: the artwork start screen; 1 = out is the artwork folder */
 bool assets_offer_zip(const char *zip);            /* browse.c: "found this - make the artwork from it?" */
 void plat_message(const char *title, const char *body);
+void audio_volume_changed(void);   /* the Sound Volume setting changed: apply it to what is playing */
 void plat_keyboard(bool show);   /* the on-screen keyboard, where there is one (Android) */
 bool mouse_fire(void);           /* any mouse button, or a touch, is down right now */
 bool plat_headless(void);   /* no real display: nothing may wait for a person */
@@ -260,7 +272,7 @@ extern bool debug_spawn;                  /* the Debug page's F-key creature spa
 /* graphics and control settings, likewise */
 enum { SCALE_INTEGER = 0, SCALE_FIT, SCALE_COUNT };
 extern int  opt_scale;
-extern bool opt_mouse, opt_keyboard, opt_pad, opt_mouse_abs;
+extern bool opt_mouse, opt_keyboard, opt_pad, opt_mouse_abs, opt_touch;
 extern int  opt_pad_deadzone;      /* percent */
 extern int  opt_mouse_speed;       /* percent: how far the shooter goes for a given mouse movement */
 extern bool opt_maximize;          /* open filling the screen */

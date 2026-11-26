@@ -4,6 +4,7 @@
  * monitor's colour table (SetEntries); this keeps that model, converting the indexed framebuffer to
  * ARGB only at present() time.
  */
+#include <math.h>
 #include "apeiron.h"
 
 uint8_t fb[SCREEN_W * SCREEN_H];
@@ -47,9 +48,12 @@ static void pad_rescan(void)
     }
 }
 
+static bool touch_stick(float *x, float *y);
+
 bool pad_move(float *x, float *y)
 {
     *x = *y = 0;
+    if (touch_stick(x, y)) return true;          /* a finger on the screen's stick (#51) */
     if (!g_pad || !opt_pad) return false;
     float dz = (float)opt_pad_deadzone / 100.0f;
     float ax = SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
@@ -171,9 +175,343 @@ bool plat_init(const char *title)
 }
 
 InputCounts in_count;
-static int mouse_down_count;            /* buttons and fingers currently down */
+static int mouse_down_count;            /* left buttons and (outside play) fingers currently down */
+
+/* ---- how the game is played without a mouse, and with only some of one -------------------------
+ * Mouse: left fires, right pauses and middle is Escape / Back (#49). A gamepad's Start pauses, and a
+ * TV remote's Menu or Play/Pause does (#48, #50); its arrows, centre button and Back are the arrow
+ * keys, Select and Back that SDL reports, which the game treats as steering, fire and Escape.
+ * Touch (#51): a floating stick, a fire button and pause / back buttons, drawn over the picture.
+ * Pause is a toggle here, where Caps Lock is a switch: whichever is on, the game is held. */
+static bool in_play;                    /* a game is running: the touch controls are live */
+static bool pause_latch;                /* pause was asked for by a button, key or tap */
+static bool mid_down;                   /* the middle mouse button is held: Escape */
+static bool touch_vis;                  /* the last thing used was a finger */
 
 bool mouse_fire(void) { pump(); return mouse_down_count > 0; }
+
+bool pause_requested(void) { return caps_lock_down() || pause_latch; }
+void pause_clear(void) { pause_latch = false; }
+
+/* ---- the menu pointer for a remote or a controller ---------------------------------------------
+ * Every screen but the game is written for a mouse. A TV remote and a gamepad have no pointer, so
+ * their arrows and sticks drive one: screens that have a handful of obvious places to go list them
+ * (nav_targets) and the arrows jump from one to the next, with a ring round the one that is
+ * selected; any other screen gets a pointer that glides at the speed the key has been held for. The
+ * centre button, Start and the A button click wherever it is. */
+#define NAV_MAX 40
+static NavTarget nav_t[NAV_MAX];
+static int   nav_n, nav_cur = -1;
+static float nav_px, nav_py;            /* the pointer, in 640x480 screen pixels */
+static bool  nav_have;                  /* nav_px/py hold where the pointer is */
+static bool  nav_mouse_seen;           /* a real mouse has been used */
+static bool  nav_ring;                  /* the last move came from a key or stick: show the ring */
+static bool  nav_keys_on = false;       /* the menus have turned remote/controller steering on */
+static int   nav_last_dx, nav_last_dy;
+static Uint64 nav_next_ms, nav_held_ms, nav_prev_ms;
+static bool  nav_prev_click;
+
+void nav_targets(const NavTarget *t, int n, int first)
+{
+    if (n > NAV_MAX) n = NAV_MAX;
+    /* The same list again - a screen that re-registers every pass - leaves the selection alone. */
+    if (n == nav_n && n > 0 && !memcmp(nav_t, t, sizeof(NavTarget) * (size_t)n)) return;
+    nav_n = n;
+    if (nav_n > 0) memcpy(nav_t, t, sizeof(NavTarget) * (size_t)nav_n);
+    nav_cur = nav_n > 0 ? (first >= 0 && first < nav_n ? first : 0) : -1;
+    nav_have = false;
+    if (nav_n > 0 && nav_ring) { /* a remote is in use: put the pointer on the first target now */
+        nav_px = nav_t[nav_cur].x + nav_t[nav_cur].w / 2.0f;
+        nav_py = nav_t[nav_cur].y + nav_t[nav_cur].h / 2.0f;
+        nav_have = true;
+    }
+}
+void nav_keys(bool on) { nav_keys_on = on; }
+
+static void nav_put(float x, float y)
+{
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > SCREEN_W - 1) x = SCREEN_W - 1;
+    if (y > SCREEN_H - 1) y = SCREEN_H - 1;
+    nav_px = x; nav_py = y; nav_have = true;
+    float lx = ((float)last_gx + x * last_scale) / (px_density > 0 ? px_density : 1.0f);
+    float ly = ((float)last_gy + y * last_scale) / (px_density > 0 ? px_density : 1.0f);
+    SDL_WarpMouseInWindow(g_win, lx, ly);
+}
+
+static void nav_jump(int dx, int dy)
+{
+    if (nav_cur < 0) return;
+    float ox = nav_t[nav_cur].x + nav_t[nav_cur].w / 2.0f, oy = nav_t[nav_cur].y + nav_t[nav_cur].h / 2.0f;
+    int pick = -1;
+    float best = 1e30f;
+    for (int i = 0; i < nav_n; i++) {
+        if (i == nav_cur) continue;
+        float cx = nav_t[i].x + nav_t[i].w / 2.0f - ox, cy = nav_t[i].y + nav_t[i].h / 2.0f - oy;
+        float along = dx ? cx * dx : cy * dy, cross = dx ? cy : cx;
+        if (along <= 1.0f) continue;                     /* not in that direction */
+        float score = along + 3.0f * (cross < 0 ? -cross : cross);
+        if (score < best) { best = score; pick = i; }
+    }
+    if (pick >= 0) nav_cur = pick;
+    nav_put(nav_t[nav_cur].x + nav_t[nav_cur].w / 2.0f, nav_t[nav_cur].y + nav_t[nav_cur].h / 2.0f);
+}
+
+/* Called from pump() whenever no game is running. */
+static void nav_step(void)
+{
+    if (in_play || !g_win || !nav_keys_on) return;
+    Uint64 now = SDL_GetTicks();
+    Uint64 dt = nav_prev_ms ? now - nav_prev_ms : 0;
+    nav_prev_ms = now;
+    if (dt > 100) dt = 100;
+
+    int n = 0;
+    const bool *st = SDL_GetKeyboardState(&n);
+    int dx = 0, dy = 0;
+    bool click = false;
+    if (st) {
+        if (SDL_SCANCODE_LEFT  < n && st[SDL_SCANCODE_LEFT])  dx = -1;
+        if (SDL_SCANCODE_RIGHT < n && st[SDL_SCANCODE_RIGHT]) dx = 1;
+        if (SDL_SCANCODE_UP    < n && st[SDL_SCANCODE_UP])    dy = -1;
+        if (SDL_SCANCODE_DOWN  < n && st[SDL_SCANCODE_DOWN])  dy = 1;
+    }
+    if (st && SDL_SCANCODE_SELECT < n && st[SDL_SCANCODE_SELECT]) click = true;
+    if (g_pad) {
+        float px, py;
+        float dz = 0.5f;
+        px = SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
+        py = SDL_GetGamepadAxis(g_pad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0f;
+        if (px < -dz) dx = -1; else if (px > dz) dx = 1;
+        if (py < -dz) dy = -1; else if (py > dz) dy = 1;
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT))  dx = -1;
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) dx = 1;
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_DPAD_UP))    dy = -1;
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN))  dy = 1;
+        if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_SOUTH) ||
+            SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_START)) click = true;
+    }
+
+    if (dx || dy) {
+        nav_ring = true;
+        if (nav_n > 0) {
+            if (!nav_have) {
+                /* The first press only shows where the selection is - the one under a mouse that
+                 * was in use, otherwise the screen's own first choice. */
+                if (nav_mouse_seen) {
+                    int mx, my;
+                    mouse_pos(&mx, &my);
+                    float best = 1e30f;
+                    for (int i = 0; i < nav_n; i++) {
+                        float cx = nav_t[i].x + nav_t[i].w / 2.0f - (float)mx, cy = nav_t[i].y + nav_t[i].h / 2.0f - (float)my;
+                        if (cx * cx + cy * cy < best) { best = cx * cx + cy * cy; nav_cur = i; }
+                    }
+                }
+                nav_put(nav_t[nav_cur].x + nav_t[nav_cur].w / 2.0f, nav_t[nav_cur].y + nav_t[nav_cur].h / 2.0f);
+                nav_next_ms = now + 350;
+            } else if (dx != nav_last_dx || dy != nav_last_dy) { nav_jump(dx, dy); nav_next_ms = now + 350; }
+            else if (now >= nav_next_ms)                        { nav_jump(dx, dy); nav_next_ms = now + 140; }
+            nav_held_ms = 0;
+        } else {
+            if (!nav_have) { int mx, my; mouse_pos(&mx, &my); nav_px = (float)mx; nav_py = (float)my; nav_have = true; }
+            nav_held_ms = (dx != nav_last_dx || dy != nav_last_dy) ? 0 : nav_held_ms + dt;
+            float speed = 220.0f + (nav_held_ms > 1200 ? 1200 : (float)nav_held_ms) * 0.45f;   /* px a second */
+            nav_put(nav_px + dx * speed * (float)dt / 1000.0f, nav_py + dy * speed * (float)dt / 1000.0f);
+        }
+    } else nav_held_ms = 0;
+    nav_last_dx = dx; nav_last_dy = dy;
+
+    if (click && !nav_prev_click) {
+        nav_ring = true;
+        if (!nav_have) { int mx, my; mouse_pos(&mx, &my); nav_px = (float)mx; nav_py = (float)my; nav_have = true; }
+        click_x = (int)nav_px; click_y = (int)nav_py;
+        have_click = true; button_event = true;
+    }
+    nav_prev_click = click;
+}
+
+/* A real mouse moved: its position wins, and the ring goes. */
+static void nav_mouse_moved(void) { nav_ring = false; nav_have = false; nav_mouse_seen = true; }
+
+/* ---- the touch controls (#51) -------------------------------------------------------------- */
+enum { FR_NONE = 0, FR_STICK, FR_FIRE, FR_PAUSE, FR_BACK };
+#define MAX_FINGERS 8
+static struct { SDL_FingerID id; int role; float x, y; bool used; } fingers[MAX_FINGERS];
+static float stick_cx, stick_cy;        /* where the finger that is steering first came down */
+static bool  stick_on;
+static bool  fire_touch, back_touch;
+static float t_ow = 1, t_oh = 1;        /* the output size the pixels below are measured in */
+static float t_gx, t_gw;                /* where the picture sits in it */
+
+typedef struct { float u, rest_x, rest_y, fire_x, fire_y, fire_r, pause_x, pause_y, back_x, back_y, btn_r, stick_r; } TouchLayout;
+
+static TouchLayout touch_layout(void)
+{
+    TouchLayout L;
+    float u = t_oh / 8.0f;
+    if (u < 36) u = 36;
+    L.u = u;
+    float ml = t_gx, mr = t_ow - (t_gx + t_gw);
+    float lx = ml * 0.5f, rx = mr * 0.5f;
+    if (lx < 1.5f * u) lx = 1.5f * u;
+    if (rx < 1.5f * u) rx = 1.5f * u;
+    if (lx > t_ow * 0.24f) lx = t_ow * 0.24f;
+    if (rx > t_ow * 0.24f) rx = t_ow * 0.24f;
+    L.stick_r = 1.15f * u;
+    L.rest_x = lx;          L.rest_y = t_oh * 0.68f;
+    L.fire_x = t_ow - rx;   L.fire_y = t_oh * 0.68f; L.fire_r = 1.0f * u;
+    L.btn_r = 0.5f * u;
+    L.back_x = t_ow - 0.9f * u;  L.back_y = 0.8f * u;
+    L.pause_x = t_ow - 2.2f * u; L.pause_y = 0.8f * u;
+    return L;
+}
+
+static bool in_circle(float x, float y, float cx, float cy, float r)
+{
+    return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r;
+}
+
+static void fingers_clear(void)
+{
+    memset(fingers, 0, sizeof fingers);
+    stick_on = fire_touch = back_touch = false;
+}
+
+static void finger_event(const SDL_Event *e)
+{
+    SDL_FingerID id = e->tfinger.fingerID;
+    float x = e->tfinger.x * t_ow, y = e->tfinger.y * t_oh;
+    int slot = -1;
+    for (int i = 0; i < MAX_FINGERS; i++) if (fingers[i].used && fingers[i].id == id) slot = i;
+
+    if (e->type == SDL_EVENT_FINGER_DOWN) {
+        touch_vis = true;
+        in_count.touch_btn++;
+        if (!in_play || !opt_touch) return;
+        if (slot < 0) for (int i = 0; i < MAX_FINGERS; i++) if (!fingers[i].used) { slot = i; break; }
+        if (slot < 0) return;
+        TouchLayout L = touch_layout();
+        int role = FR_NONE;
+        if (in_circle(x, y, L.back_x, L.back_y, L.btn_r * 1.3f)) role = FR_BACK;
+        else if (in_circle(x, y, L.pause_x, L.pause_y, L.btn_r * 1.3f)) role = FR_PAUSE;
+        else if (in_circle(x, y, L.fire_x, L.fire_y, L.fire_r * 1.7f)) role = FR_FIRE;
+        else if (x < t_ow * 0.5f && !stick_on) role = FR_STICK;
+        fingers[slot].used = true; fingers[slot].id = id; fingers[slot].role = role;
+        fingers[slot].x = x; fingers[slot].y = y;
+        if (role == FR_PAUSE) pause_latch = !pause_latch;
+        if (role == FR_BACK) back_touch = true;
+        if (role == FR_FIRE) fire_touch = true;
+        if (role == FR_STICK) { stick_on = true; stick_cx = x; stick_cy = y; }
+    } else if (e->type == SDL_EVENT_FINGER_MOTION) {
+        if (slot >= 0) { fingers[slot].x = x; fingers[slot].y = y; }
+    } else {                                         /* UP or CANCELED */
+        if (slot < 0) return;
+        int role = fingers[slot].role;
+        fingers[slot].used = false;
+        if (role == FR_STICK) stick_on = false;
+        if (role == FR_FIRE) fire_touch = false;
+        if (role == FR_BACK) back_touch = false;
+    }
+}
+
+/* The stick, as the controller's: -1..1 on each axis, 0 inside the dead zone. */
+static bool touch_stick(float *x, float *y)
+{
+    if (!in_play || !opt_touch || !stick_on) return false;
+    TouchLayout L = touch_layout();
+    for (int i = 0; i < MAX_FINGERS; i++)
+        if (fingers[i].used && fingers[i].role == FR_STICK) {
+            float dx = (fingers[i].x - stick_cx) / L.stick_r, dy = (fingers[i].y - stick_cy) / L.stick_r;
+            float m = sqrtf(dx * dx + dy * dy);
+            if (m < 0.15f) return false;
+            if (m > 1.0f) { dx /= m; dy /= m; }
+            *x = dx; *y = dy;
+            return true;
+        }
+    return false;
+}
+
+bool touch_active(void) { return in_play && opt_touch && touch_vis; }
+bool touch_fire(void) { pump(); return in_play && opt_touch && fire_touch; }
+
+void input_play(bool on)
+{
+    in_play = on;
+    pause_latch = false;
+    fingers_clear();
+    nav_n = 0; nav_cur = -1; nav_have = false;
+    mouse_down_count = 0;
+}
+
+/* Drawn over the finished frame. Everything is filled rectangles - discs from rows of them - so it
+ * needs nothing from the artwork and draws the same everywhere. */
+static void disc(float cx, float cy, float r, Uint8 R, Uint8 G, Uint8 B, Uint8 A)
+{
+    SDL_SetRenderDrawColor(g_ren, R, G, B, A);
+    float step = r > 60 ? 3.0f : 2.0f;
+    for (float y = -r; y <= r; y += step) {
+        float w = sqrtf(r * r - y * y);
+        SDL_FRect row = { cx - w, cy + y, 2 * w, step };
+        SDL_RenderFillRect(g_ren, &row);
+    }
+}
+
+static void touch_draw(void)
+{
+    if (!in_play || !opt_touch || !touch_vis) return;
+    SDL_SetRenderDrawBlendMode(g_ren, SDL_BLENDMODE_BLEND);
+    TouchLayout L = touch_layout();
+    float u = L.u;
+
+    /* the stick: a faint disc where it rests, or where the finger came down */
+    float bx = stick_on ? stick_cx : L.rest_x, by = stick_on ? stick_cy : L.rest_y;
+    disc(bx, by, L.stick_r, 255, 255, 255, stick_on ? 46 : 30);
+    disc(bx, by, L.stick_r - 4, 0, 0, 0, stick_on ? 40 : 22);
+    float kx = bx, ky = by;
+    for (int i = 0; i < MAX_FINGERS; i++)
+        if (stick_on && fingers[i].used && fingers[i].role == FR_STICK) {
+            float dx = fingers[i].x - stick_cx, dy = fingers[i].y - stick_cy;
+            float m = sqrtf(dx * dx + dy * dy);
+            if (m > L.stick_r) { dx *= L.stick_r / m; dy *= L.stick_r / m; }
+            kx = bx + dx; ky = by + dy;
+        }
+    disc(kx, ky, 0.5f * u, 255, 255, 255, stick_on ? 150 : 80);
+
+    /* fire */
+    disc(L.fire_x, L.fire_y, L.fire_r, 255, 80, 60, fire_touch ? 150 : 70);
+    disc(L.fire_x, L.fire_y, L.fire_r * 0.55f, 255, 255, 255, fire_touch ? 130 : 60);
+
+    /* pause: two bars; back: a cross */
+    disc(L.pause_x, L.pause_y, L.btn_r, 255, 255, 255, 60);
+    disc(L.back_x, L.back_y, L.btn_r, 255, 255, 255, back_touch ? 130 : 60);
+    SDL_SetRenderDrawColor(g_ren, 255, 255, 255, 190);
+    float bw = 0.12f * u, bh = 0.42f * u;
+    SDL_FRect b1 = { L.pause_x - 0.17f * u, L.pause_y - bh / 2, bw, bh }, b2 = { L.pause_x + 0.05f * u, L.pause_y - bh / 2, bw, bh };
+    SDL_RenderFillRect(g_ren, &b1); SDL_RenderFillRect(g_ren, &b2);
+    for (int i = -3; i <= 3; i++) {
+        float o = i * 0.06f * u, sq = 0.11f * u;
+        SDL_FRect d1 = { L.back_x + o - sq / 2, L.back_y + o - sq / 2, sq, sq };
+        SDL_FRect d2 = { L.back_x + o - sq / 2, L.back_y - o - sq / 2, sq, sq };
+        SDL_RenderFillRect(g_ren, &d1); SDL_RenderFillRect(g_ren, &d2);
+    }
+    SDL_SetRenderDrawBlendMode(g_ren, SDL_BLENDMODE_NONE);
+}
+
+/* The ring round whatever the remote has selected. */
+static void nav_draw(float gx, float gy, float fs)
+{
+    if (in_play || !nav_ring || nav_cur < 0 || nav_n <= 0) return;
+    NavTarget *t = &nav_t[nav_cur];
+    float pad = 3.0f * fs, th = (fs < 2 ? 2.0f : fs);
+    float x = gx + t->x * fs - pad, y = gy + t->y * fs - pad;
+    float w = t->w * fs + 2 * pad, h = t->h * fs + 2 * pad;
+    SDL_SetRenderDrawColor(g_ren, 255, 215, 64, 255);
+    SDL_FRect top = { x, y, w, th }, bot = { x, y + h - th, w, th };
+    SDL_FRect lef = { x, y, th, h }, rig = { x + w - th, y, th, h };
+    SDL_RenderFillRect(g_ren, &top); SDL_RenderFillRect(g_ren, &bot);
+    SDL_RenderFillRect(g_ren, &lef); SDL_RenderFillRect(g_ren, &rig);
+}
 
 void plat_keyboard(bool show)
 {
@@ -207,30 +545,59 @@ void pump(void)
          * position instead of a delta (libsdl-org/SDL#14926). xrel/yrel are the same numbers SDL
          * would accumulate for that call, and reading them here means one path on every platform. */
         if (e.type == SDL_EVENT_MOUSE_MOTION) {
-            if (e.motion.which == SDL_TOUCH_MOUSEID) in_count.touch_move++; else in_count.mouse_move++;
-            rel_x += e.motion.xrel;
-            rel_y += e.motion.yrel;
+            if (e.motion.which == SDL_TOUCH_MOUSEID) { in_count.touch_move++; touch_vis = true; }
+            else { in_count.mouse_move++; touch_vis = false; nav_mouse_moved(); }
+            if (!(in_play && opt_touch && e.motion.which == SDL_TOUCH_MOUSEID)) {
+                rel_x += e.motion.xrel;
+                rel_y += e.motion.yrel;
+            }
         }
-        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            if (e.button.which == SDL_TOUCH_MOUSEID) in_count.touch_btn++; else in_count.mouse_btn++;
-            mouse_down_count++;
-            button_event = true; have_click = true;
-            click_x = (int)((e.button.x * px_density - last_gx) / last_scale);
-            click_y = (int)((e.button.y * px_density - last_gy) / last_scale);
+        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            bool down = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+            bool touch = e.button.which == SDL_TOUCH_MOUSEID;
+            if (down) { if (touch) { in_count.touch_btn++; touch_vis = true; } else { in_count.mouse_btn++; touch_vis = false; } }
+            /* In a game on a touch screen the fingers are read as fingers (FINGER_* below); the
+             * mouse events SDL makes up from them would fire the gun wherever they land. */
+            if (touch && in_play && opt_touch) continue;
+            if (e.button.button == SDL_BUTTON_MIDDLE) mid_down = down;
+            else if (e.button.button == SDL_BUTTON_RIGHT) {
+                if (down && in_play) pause_latch = !pause_latch;
+            } else if (down) {
+                mouse_down_count++;
+                button_event = true; have_click = true;
+                click_x = (int)((e.button.x * px_density - last_gx) / last_scale);
+                click_y = (int)((e.button.y * px_density - last_gy) / last_scale);
+                nav_ring = false;
+            } else if (mouse_down_count > 0) mouse_down_count--;
         }
-        if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && mouse_down_count > 0) mouse_down_count--;
-        if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) { has_focus = false; mouse_down_count = 0; }
+        if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
+            e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED)
+            finger_event(&e);
+        if (e.type == SDL_EVENT_WINDOW_FOCUS_LOST) { has_focus = false; mouse_down_count = 0; fingers_clear(); mid_down = false; }
         if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) has_focus = true;
         if (e.type == SDL_EVENT_TEXT_INPUT && ntyped < (int)sizeof typed - 1)
             for (const char *t = e.text.text; *t; t++)
                 if ((unsigned char)*t >= 32 && ntyped < (int)sizeof typed - 1) typed[ntyped++] = *t;
-        if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) in_count.pad++;
+        if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+            in_count.pad++;
+            touch_vis = false;
+        }
+        if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_START &&
+            in_play && opt_pad)
+            pause_latch = !pause_latch;
         if (e.type == SDL_EVENT_KEY_DOWN) {
             in_count.key++;
+            if (e.key.scancode != SDL_SCANCODE_UNKNOWN) touch_vis = false;
             if (e.key.key == SDLK_F11) toggle_fullscreen();
             else button_event = true;
+            /* P, a remote's Menu and its Play/Pause key pause the game (#48). */
+            if (in_play && !e.key.repeat &&
+                (e.key.scancode == SDL_SCANCODE_P || e.key.scancode == SDL_SCANCODE_MENU ||
+                 e.key.scancode == SDL_SCANCODE_MEDIA_PLAY_PAUSE))
+                pause_latch = !pause_latch;
         }
     }
+    nav_step();
 }
 
 bool button(void) { pump(); bool b = button_event; button_event = false; return b; }
@@ -259,7 +626,14 @@ bool key_down(SDL_Scancode sc)
     pump();
     int n = 0;
     const bool *st = SDL_GetKeyboardState(&n);
-    return st && (int)sc < n && st[sc];
+    bool v = st && (int)sc < n && st[sc];
+    /* Escape is also Back on a remote or a phone, the middle mouse button, and the touch Back
+     * button (#48 #49 #51). */
+    if (sc == SDL_SCANCODE_ESCAPE) {
+        if (st && SDL_SCANCODE_AC_BACK < n && st[SDL_SCANCODE_AC_BACK]) v = true;
+        if (mid_down || back_touch) v = true;
+    }
+    return v;
 }
 
 /* Any key or mouse button at all - the title screen's idle timer only needs to know that
@@ -468,6 +842,7 @@ void present(void)
     float fs = (float)gw / (float)SCREEN_W;
     last_scale = fs > 0 ? fs : 1.0f;
     last_gx = gx; last_gy = gy;
+    t_ow = (float)ow; t_oh = (float)oh; t_gx = (float)gx; t_gw = (float)gw;
 
     /* Asked of the window rather than remembered from an event: a focus change that arrives while
      * something else is draining the queue used to leave the flag stuck off, and the hand with it. */
@@ -510,6 +885,8 @@ void present(void)
     }
     SDL_FRect dst = { (float)gx, (float)gy, (float)gw, (float)gh };
     SDL_RenderTexture(g_ren, g_tex, NULL, &dst);
+    nav_draw((float)gx, (float)gy, fs);
+    touch_draw();
     SDL_RenderPresent(g_ren);
 }
 
@@ -986,6 +1363,24 @@ Voice sound_play(const Sound *s)
     return v;                       /* the caller's own stream carries the sound; see voice_play */
 }
 
+/* The Sound Volume setting. [SetPrefs] turns the six menu entries (Off, Very Soft, Soft, Moderate,
+ * Loud, Very Loud) into [ST_SetVolume] levels 0, 0x25, 0x50, 0x8c, 200 and 0xff out of 0x100, and
+ * the original passed that to the Sound Manager as the whole machine's output level. Here it is a
+ * gain on every stream the game opens, which is the same level without touching the device's own
+ * volume (#47: the setting was saved and shown but never applied, so the game was always at full
+ * level - "Off" included). Music and effects share it, as they did. */
+static float volume_gain(void)
+{
+    static const int level[6] = { 0, 0x25, 0x50, 0x8c, 200, 0xff };
+    int v = A.pref_volume < 0 ? 0 : A.pref_volume > 5 ? 5 : A.pref_volume;
+    return (float)level[v] / 256.0f;
+}
+
+static void stream_gain(SDL_AudioStream *st)
+{
+    if (st) SDL_SetAudioStreamGain(st, volume_gain());
+}
+
 /* Puts `s` into an already-open stream, converting on the way in. */
 static void voice_play(SDL_AudioStream **slot, Voice *v, const Sound *s)
 {
@@ -999,6 +1394,7 @@ static void voice_play(SDL_AudioStream **slot, Voice *v, const Sound *s)
             return;
         }
     }
+    stream_gain(*slot);
     SDL_ClearAudioStream(*slot);
     SDL_SetAudioStreamFormat(*slot, &s->spec, NULL);
     SDL_PutAudioStreamData(*slot, s->data, (int)s->len);
@@ -1035,6 +1431,13 @@ static Voice music_voice;
 static int  music_state;                  /* 0 off, 1 playing "start", 2 playing the loop */
 static Sound music_start_snd, music_loop_snd;
 static SDL_AudioStream *music_stream;
+
+/* The title screen's arrows change the setting; every open stream picks the new level up at once. */
+void audio_volume_changed(void)
+{
+    for (int i = 0; i < VOICES; i++) stream_gain(voices[i].stream);
+    stream_gain(music_stream);
+}
 
 /* Loads whatever sounds `dir` holds over whatever is loaded already, freeing what it replaces.
  * assets_set_pack() calls it twice - the game's own bank, then the pack's - so a pack carrying
@@ -1135,7 +1538,7 @@ void music_pump(void)
  * it and then keeps the window alive until the callback has fired. A .app started from the Finder
  * has no console, so this is the only way it can say what it needs.
  */
-typedef struct { char *out; size_t n; bool done, got; } PickState;
+typedef struct { char *out; size_t n; volatile bool done, got; } PickState;
 
 static void SDLCALL pick_cb(void *userdata, const char * const *list, int filter)
 {
@@ -1184,8 +1587,15 @@ bool assets_pick_zip(char *out, size_t n)
 {
     PickState st = { out, n, false, false };
     if (plat_headless()) return false;
+#ifdef __ANDROID__
+    /* The system's picker filters by MIME type, and a browser may have saved the download as
+     * application/octet-stream or x-zip-compressed - which a "zip" filter would hide. Show
+     * everything; the game checks what it was given. */
+    SDL_ShowOpenFileDialog(pick_cb, &st, g_win, NULL, 0, NULL, false);
+#else
     static const SDL_DialogFileFilter filters[] = { { "Zip files", "zip" } };
     SDL_ShowOpenFileDialog(pick_cb, &st, g_win, filters, 1, NULL, false);
+#endif
     Uint64 giveup = SDL_GetTicks() + 300000;
     while (!st.done && SDL_GetTicks() < giveup) {
         SDL_Event e;
@@ -1271,3 +1681,37 @@ void plat_message(const char *title, const char *body)
         wait_ms(16);
     }
 }
+
+/* Android's picker hands back a content:// URI, not a path: the file stays with the app that owns it
+ * and SDL_IOFromFile is the one way to read it. The game's zip is read with fopen like everything
+ * else, so the picked file is copied into the app's own folder first (about five megabytes) and
+ * the caller deletes the copy once the artwork is made. */
+#ifdef __ANDROID__
+bool plat_import_zip(const char *uri, char *out, size_t n)
+{
+    const char *base = SDL_GetAndroidInternalStoragePath();
+    if (!base || !*base) return false;
+    snprintf(out, n, "%s/picked.zip", base);
+    SDL_IOStream *in = SDL_IOFromFile(uri, "rb");
+    if (!in) { diag_note("import: cannot open '%s': %s", uri, SDL_GetError()); return false; }
+    FILE *f = fopen(out, "wb");
+    if (!f) { SDL_CloseIO(in); return false; }
+    static unsigned char buf[65536];
+    bool ok = true;
+    size_t total = 0;
+    for (;;) {
+        size_t got = SDL_ReadIO(in, buf, sizeof buf);
+        if (got == 0) break;
+        if (fwrite(buf, 1, got, f) != got) { ok = false; break; }
+        total += got;
+        if (total > 256u * 1024 * 1024) { ok = false; break; }       /* nothing here is that big */
+    }
+    SDL_CloseIO(in);
+    if (fclose(f) != 0) ok = false;
+    if (!ok || total == 0) { remove(out); return false; }
+    diag_note("import: copied %zu bytes from '%s'", total, uri);
+    return true;
+}
+#else
+bool plat_import_zip(const char *uri, char *out, size_t n) { (void)uri; (void)out; (void)n; return false; }
+#endif

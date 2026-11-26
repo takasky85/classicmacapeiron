@@ -18,7 +18,7 @@ static char asset_root[768];
 /* Settings the Options screen owns. The defaults are how the game played before it existed. */
 bool enh[ENH_COUNT] = { true, true, true, false, true, true, true };
 int  opt_scale = SCALE_INTEGER;
-bool opt_mouse = true, opt_keyboard = true, opt_pad = true;
+bool opt_mouse = true, opt_keyboard = true, opt_pad = true, opt_touch = true;
 bool opt_mouse_abs = false;        /* read the pointer's position instead of SDL's deltas */
 int  opt_pad_deadzone = 25;
 /* Mouse movement arrives in screen pixels, and the game divides it by how much the 640x480 picture
@@ -246,6 +246,7 @@ void assets_load_options(const char *dir)
         else if (!strcmp(key, "mouseabs")) opt_mouse_abs = v != 0;
         else if (!strcmp(key, "keyboard")) opt_keyboard = v != 0;
         else if (!strcmp(key, "pad"))      opt_pad = v != 0;
+        else if (!strcmp(key, "touch"))    opt_touch = v != 0;
         else if (!strcmp(key, "mousespeed")) opt_mouse_speed = (v >= 25 && v <= 1600) ? v : opt_mouse_speed;
         else if (!strcmp(key, "deadzone")) opt_pad_deadzone = (v >= 0 && v <= 90) ? v : 25;
         else if (!strcmp(key, "pack"))     { if (have_sheets && v > 0 && v < PACK_COUNT) assets_set_pack(v); }
@@ -269,9 +270,9 @@ void assets_save_options(const char *dir)
     FILE *f = state_open(dir, "options.txt", "wb");
     if (!f) return;
     fprintf(f, "scale %d\nmouse %d\nkeyboard %d\npad %d\ndeadzone %d\npack %d\ndebug %d\n"
-               "maximize %d\nstartwave %d\nmouseabs %d\nmousespeed %d\n",
+               "maximize %d\nstartwave %d\nmouseabs %d\nmousespeed %d\ntouch %d\n",
             opt_scale, opt_mouse, opt_keyboard, opt_pad, opt_pad_deadzone,
-            assets_pack(), debug_spawn, opt_maximize, opt_start_wave, opt_mouse_abs, opt_mouse_speed);
+            assets_pack(), debug_spawn, opt_maximize, opt_start_wave, opt_mouse_abs, opt_mouse_speed, opt_touch);
     for (int i = 0; i < CH_COUNT; i++) fprintf(f, "cheat %d %d\n", i, cheat[i] ? 1 : 0);
     for (int i = 0; i < ENH_COUNT; i++) fprintf(f, "enh %d %d\n", i, enh[i] ? 1 : 0);
     fclose(f);

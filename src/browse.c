@@ -465,3 +465,152 @@ bool assets_make_from_zip(const char *zip, char *out, size_t n)
     free(p);
     return true;
 }
+
+/* ---- the first screen when there is no artwork (Android phone, tablet and TV) -------------------
+ * Big buttons, because it has to work with a finger on a phone and a remote on a TV and nothing
+ * else: tap one, or select one with the arrows and press the centre button. "Choose the zip" is
+ * Android's own file picker, which needs no permission and shows Downloads and every other place
+ * a download can have gone, so a phone never has to be taken to a Settings page. */
+typedef struct { const char *title, *sub; } StartBtn;
+
+static const StartBtn start_btn[4] = {
+    { "Choose the Apeiron zip",      "opens the file picker - the zip you downloaded" },
+    { "Look in my Downloads folder", "finds the zip by itself (may ask to read files)" },
+    { "How do I get the zip?",       "the steps, with the web address" },
+    { "Browse folders",              "for a remote or controller, or a folder of artwork" },
+};
+enum { SB_X = 40, SB_W = SCREEN_W - 80, SB_Y0 = 96, SB_H = 56, SB_DY = 68 };
+
+static void draw_start(const char *msg)
+{
+    fill_rect(0, 0, SCREEN_W, SCREEN_H, C_BG);
+    mini_text2x(SB_X, 16, "Apeiron needs its artwork", C_TITLE);
+    mini_text(SB_X, 46, "The game makes its own from your copy of Apeiron 1.0.3 (the Mac one, a zip).", C_DIM);
+    mini_text(SB_X, 58, "Choose it below - it takes a few seconds, once.", C_DIM);
+    for (int i = 0; i < 4; i++) {
+        int y = SB_Y0 + i * SB_DY;
+        fill_rect(SB_X, y, SB_W, SB_H, C_SEL);
+        mini_text2x(SB_X + 14, y + 10, start_btn[i].title, C_SELINK);
+        mini_text(SB_X + 14, y + 36, start_btn[i].sub, C_INK);
+    }
+    if (msg && *msg) {
+        fill_rect(SB_X, SB_Y0 + 4 * SB_DY - 2, SB_W, 22, C_BG);
+        mini_text(SB_X, SB_Y0 + 4 * SB_DY + 2, msg, C_OK);
+    }
+    set_entries();
+    present();
+}
+
+static void draw_howto(void)
+{
+    static const char *lines[] = {
+        "1. On a computer, open the Apeiron page on macintoshrepository.org:",
+        "      macintoshrepository.org/5191-apeiron",
+        "   and open its emulator (\"Emulate in browser\").",
+        "2. In the emulator, drag the Apeiron folder onto",
+        "      The Outside World -> Uploads",
+        "3. It offers a zip to download. Save it, and put it on this device -",
+        "   in the Downloads folder, say.",
+        "4. Come back here and choose that zip.",
+    };
+    fill_rect(0, 0, SCREEN_W, SCREEN_H, C_BG);
+    mini_text2x(SB_X, 16, "Getting the zip", C_TITLE);
+    for (unsigned i = 0; i < sizeof lines / sizeof lines[0]; i++)
+        mini_text(SB_X, 60 + (int)i * 18, lines[i], C_INK);
+    mini_text(SB_X, 60 + 8 * 18 + 14, "The game does not come with Ambrosia's artwork, sounds or fonts, so it", C_DIM);
+    mini_text(SB_X, 60 + 8 * 18 + 26, "makes its own from your copy; nothing leaves this device.", C_DIM);
+    fill_rect(SB_X, SCREEN_H - 70, SB_W, 40, C_SEL);
+    mini_text2x(SB_X + 14, SCREEN_H - 60, "Back", C_SELINK);
+    set_entries();
+    present();
+}
+
+/* Make the artwork from `zip`; `temp` is a copy the game made itself, deleted afterwards. */
+static bool start_make(const char *zip, bool temp, char *out, size_t n)
+{
+    bool ok = assets_make_from_zip(zip, out, n);
+    if (temp) remove(zip);
+    browse_palette();
+    return ok;
+}
+
+int assets_start(char *out, size_t n)
+{
+    if (plat_headless()) { diag_note("apeiron: no display - not opening the start screen"); return 0; }
+    browse_palette();
+    nav_keys(true);
+    NavTarget t[4];
+    for (int i = 0; i < 4; i++) t[i] = (NavTarget){ SB_X, SB_Y0 + i * SB_DY, SB_W, SB_H };
+
+    char msg[160] = "";
+    int result = 0;
+    while (!result) {
+        nav_targets(t, 4, 0);
+        draw_start(msg);
+        int mx, my;
+        int hit = -1;
+        if (take_click(&mx, &my)) {
+            for (int i = 0; i < 4; i++)
+                if (mx >= SB_X && mx < SB_X + SB_W && my >= SB_Y0 + i * SB_DY && my < SB_Y0 + i * SB_DY + SB_H) hit = i;
+        }
+        if (key_down(SDL_SCANCODE_ESCAPE)) { diag_note("apeiron: start screen: back - leaving"); plat_shutdown(0); }
+        if (hit < 0) { pump(); wait_ms(16); continue; }
+        msg[0] = 0;
+
+        if (hit == 0) {                                     /* the system's picker */
+            char picked[1200];
+            nav_targets(NULL, 0, 0);
+            if (!assets_pick_zip(picked, sizeof picked)) { snprintf(msg, sizeof msg, "Nothing was chosen."); continue; }
+            char local[1200];
+            bool temp = false;
+            if (!strncmp(picked, "content://", 10)) {
+                if (!plat_import_zip(picked, local, sizeof local)) {
+                    snprintf(msg, sizeof msg, "Could not read that file.");
+                    continue;
+                }
+                temp = true;
+            } else snprintf(local, sizeof local, "%s", picked);
+            if (!convert_zip_ok(local)) {
+                if (temp) remove(local);
+                snprintf(msg, sizeof msg, "That is not the Apeiron zip - it has no game files in it.");
+                continue;
+            }
+            if (start_make(local, temp, out, n)) result = 1;
+        } else if (hit == 1) {                              /* Downloads */
+            droid_ask_storage();
+            char zip[1200];
+            if (convert_find_zip(zip, sizeof zip)) {
+                if (assets_offer_zip(zip) && start_make(zip, false, out, n)) result = 1;
+                browse_palette();
+            } else snprintf(msg, sizeof msg, "No Apeiron zip in Downloads. Try \"Choose the Apeiron zip\".");
+        } else if (hit == 2) {                              /* how to get it */
+            NavTarget back = { SB_X, SCREEN_H - 70, SB_W, 40 };
+            for (;;) {
+                nav_targets(&back, 1, 0);
+                draw_howto();
+                int cx, cy;
+                bool go = take_click(&cx, &cy) || key_down(SDL_SCANCODE_ESCAPE);
+                if (go) break;
+                pump(); wait_ms(16);
+            }
+            while (key_down(SDL_SCANCODE_ESCAPE)) { pump(); wait_ms(16); }   /* Back is not Back twice */
+            flush_clicks();
+        } else {                                            /* the file browser */
+            nav_keys(false);                                /* it reads the arrows and buttons itself */
+            nav_targets(NULL, 0, 0);
+            int r = assets_browse(out, n);
+            nav_keys(true);
+            browse_palette();
+            if (r == 1) result = 1;
+            else if (r == 2) {
+                char zip[1200];
+                snprintf(zip, sizeof zip, "%s", out);
+                if (start_make(zip, false, out, n)) result = 1;
+            }
+        }
+        flush_clicks();
+    }
+    nav_targets(NULL, 0, 0);
+    nav_keys(false);
+    return result;
+}

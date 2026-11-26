@@ -189,6 +189,21 @@ static void flash_button(const Image *hit, int x, int y)
     delay_ticks(7);
 }
 
+/* Where a remote's or a controller's arrows can land on the title screen: the six entries, and the
+ * two halves (down arrow, up arrow) of the volume and music settings. */
+static void title_nav(void)
+{
+    NavTarget t[10];
+    int n = 0;
+    for (int i = 0; i < 6; i++) t[n++] = (NavTarget){ MENU_X, MENU_Y0 + i * MENU_DY, SCREEN_W - MENU_X, MENU_ICON };
+    for (int i = 0; i < 2; i++) {
+        int top = SET_Y0 + i * SET_DY;
+        t[n++] = (NavTarget){ MENU_X, top, 76, MENU_ICON };
+        t[n++] = (NavTarget){ MENU_X + 76, top, 76, MENU_ICON };
+    }
+    nav_targets(t, n, 0);                    /* Play Apeiron */
+}
+
 /* [TitleClick]: the six menu entries, plus the sound-volume and music settings. */
 int title_loop(void)
 {
@@ -200,6 +215,7 @@ int title_loop(void)
 
     Uint64 idle_since = SDL_GetTicks();
     for (;;) {
+        title_nav();
         /* left alone for twenty seconds, the game shows itself off; coming back from the demo
          * puts the title screen up again as if nothing had happened */
         if (enh[ENH_ATTRACT] && SDL_GetTicks() - idle_since > 20000) {
@@ -235,6 +251,7 @@ int title_loop(void)
                     *v += down ? -1 : 1;
                     if (*v < 0) *v = 0;
                     if (*v > hi) *v = hi;
+                    if (i == 0) audio_volume_changed();
                     sfx(SND_YUMMIE_APPEARS);     /* [TitleClick]: *(TOC+0x169c) = snd 134 */
                     draw_title_screen();
                     set_entries();
@@ -696,11 +713,12 @@ static int page_rows(int page, Row *r, int max)
         ADD(ROW_CHECK, 2, 0, "Mouse",    "move the shooter; the button fires");
         ADD(ROW_CHECK, 2, 1, "Keyboard", "arrows or WASD; space or control fires");
         ADD(ROW_CHECK, 2, 2, "Controller", NULL);
+        ADD(ROW_CHECK, 2, 3, "Touch controls", "a stick, fire, pause and back on a touch screen");
         ADD(ROW_CHECK, 10, 0, "Track the pointer directly",
             "for virtual machines and remote desktops, where mouse movement comes out jerky");
         ADD(ROW_VALUE, 11, 0, "Mouse speed", NULL);
         ADD(ROW_VALUE, 3, 0, "Stick dead zone", NULL);
-        ADD(ROW_NOTE, 0, 0, "In play: Caps Lock or Start pauses, Escape quits to the title.", NULL);
+        ADD(ROW_NOTE, 0, 0, "In play: Caps Lock, P, right click or Start pauses; Esc, middle click or Back quits.", NULL);
         break;
     case PG_ASSETS:
         ADD(ROW_TEXT, 0, 0, "Artwork and sound", NULL);
@@ -753,7 +771,7 @@ static bool row_state(const Row *r)
 {
     switch (r->group) {
     case 1: return opt_scale == r->index;
-    case 2: return r->index == 0 ? opt_mouse : (r->index == 1 ? opt_keyboard : opt_pad);
+    case 2: return r->index == 0 ? opt_mouse : r->index == 1 ? opt_keyboard : r->index == 2 ? opt_pad : opt_touch;
     case 4: return assets_pack() == r->index;
     case 5: return cheat[r->index];
     case 6: return enh[r->index];
@@ -771,7 +789,8 @@ static void row_toggle(const Row *r)
     case 2:
         if (r->index == 0) opt_mouse = !opt_mouse;
         else if (r->index == 1) opt_keyboard = !opt_keyboard;
-        else opt_pad = !opt_pad;
+        else if (r->index == 2) opt_pad = !opt_pad;
+        else opt_touch = !opt_touch;
         break;
     case 8: opt_maximize = !opt_maximize; break;
     case 10: opt_mouse_abs = !opt_mouse_abs; mouse_abs_changed(); break;
@@ -810,7 +829,7 @@ static const int BTN_W = 67, BTN_H = 20, BTN_Y = SCREEN_H - 50;
 
 typedef struct {
     int  scale, deadzone, start_wave, pack, mspeed;
-    bool mouse, keyboard, pad, maximize, spawn, mabs;
+    bool mouse, keyboard, pad, maximize, spawn, mabs, touch;
     bool cheat[CH_COUNT], enh[ENH_COUNT];
 } OptSnapshot;
 
@@ -818,7 +837,7 @@ static void opt_snapshot(OptSnapshot *s)
 {
     s->scale = opt_scale; s->deadzone = opt_pad_deadzone; s->start_wave = opt_start_wave;
     s->pack = assets_pack(); s->mspeed = opt_mouse_speed;
-    s->mouse = opt_mouse; s->keyboard = opt_keyboard; s->pad = opt_pad; s->mabs = opt_mouse_abs;
+    s->mouse = opt_mouse; s->keyboard = opt_keyboard; s->pad = opt_pad; s->mabs = opt_mouse_abs; s->touch = opt_touch;
     s->maximize = opt_maximize; s->spawn = debug_spawn;
     memcpy(s->cheat, cheat, sizeof s->cheat);
     memcpy(s->enh, enh, sizeof s->enh);
@@ -828,7 +847,7 @@ static void opt_restore(const OptSnapshot *s)
 {
     opt_scale = s->scale; opt_pad_deadzone = s->deadzone; opt_start_wave = s->start_wave;
     opt_mouse_speed = s->mspeed;
-    opt_mouse = s->mouse; opt_keyboard = s->keyboard; opt_pad = s->pad;
+    opt_mouse = s->mouse; opt_keyboard = s->keyboard; opt_pad = s->pad; opt_touch = s->touch;
     if (opt_mouse_abs != s->mabs) { opt_mouse_abs = s->mabs; mouse_abs_changed(); }
     opt_maximize = s->maximize; debug_spawn = s->spawn;
     memcpy(cheat, s->cheat, sizeof s->cheat);
@@ -951,6 +970,24 @@ void do_options(void)
     uint8_t b_black = find_color(0, 0, 0), b_white = find_color(0xFFFF, 0xFFFF, 0xFFFF);
     bool cancelled = false;
     for (;;) {
+        /* The places a remote or controller can select: the tabs, the rows that do something, and
+         * the two buttons. */
+        {
+            NavTarget t[40];
+            int nt = 0, x = 24;
+            for (int i = 0; i < PG_COUNT && nt < 40; i++) {
+                int tw = text_width(&A.geneva9, PAGE_NAME[i], STYLE_BOLD) + 16;
+                t[nt++] = (NavTarget){ x, TAB_Y, tw, TAB_H };
+                x += tw + 6;
+            }
+            for (int i = 0; i < nrow && nt < 38; i++) {
+                if (row[i].kind == ROW_TEXT || row[i].kind == ROW_NOTE) continue;
+                t[nt++] = (NavTarget){ ROW_X, ROW_Y0 + i * ROW_DY - 2, 420, 17 };
+            }
+            t[nt++] = (NavTarget){ BTN_CANCEL_X, BTN_Y, BTN_W, BTN_H };
+            t[nt++] = (NavTarget){ BTN_OK_X, BTN_Y, BTN_W, BTN_H };
+            nav_targets(t, nt, page);
+        }
         int mx, my;
         if (take_click(&mx, &my)) {
             /* OK and Cancel. Both flash on the way out; Cancel also puts every setting back to

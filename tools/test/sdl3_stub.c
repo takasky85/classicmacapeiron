@@ -6,7 +6,7 @@
 #include <stdarg.h>
 #include <math.h>
 static Uint64 now; static Uint64 snap_every=1000, next_snap=0, limit=40000;
-static int OW=640, OH=480; static uint32_t *outbuf; static uint32_t drawcol=0xFF000000u;
+static int OW=640, OH=480; static uint32_t *outbuf; static uint32_t drawcol=0xFF000000u; static int drawA=255;
 static int frameno; static unsigned rseed=12345;
 static int script=0;            /* 1 = play the game: click title, then drive the ship */
 static int clicks_done=0;
@@ -35,12 +35,13 @@ bool SDL_SetWindowMinimumSize(SDL_Window*w,int a,int b){ return true; }
 bool SDL_MaximizeWindow(SDL_Window*w){ return true; }
 bool SDL_SetWindowFullscreen(SDL_Window*w,bool f){ printf("[%llu ms] fullscreen=%d\n",(unsigned long long)now,f); return true; }
 bool SDL_GetRenderOutputSize(SDL_Renderer*r,int*w,int*h){ *w=OW; *h=OH; return true; }
-bool SDL_SetRenderDrawColor(SDL_Renderer*r,Uint8 R,Uint8 G,Uint8 B,Uint8 A){ drawcol=0xFF000000u|(R<<16)|(G<<8)|B; return true; }
+bool SDL_SetRenderDrawColor(SDL_Renderer*r,Uint8 R,Uint8 G,Uint8 B,Uint8 A){ drawcol=0xFF000000u|(R<<16)|(G<<8)|B; drawA=A; return true; }
 SDL_Texture *SDL_CreateTexture(SDL_Renderer*r,SDL_PixelFormat f,SDL_TextureAccess a,int w,int h){ SDL_Texture*t=calloc(1,sizeof *t); t->w=w;t->h=h;t->px=calloc((size_t)w*h,4); return t; }
 bool SDL_SetTextureScaleMode(SDL_Texture*t,SDL_ScaleMode m){return true;}
 bool SDL_UpdateTexture(SDL_Texture*t,const SDL_Rect*r,const void*p,int pitch){ for(int y=0;y<t->h;y++) memcpy(t->px+(size_t)y*t->w,(const char*)p+(size_t)y*pitch,(size_t)t->w*4); return true; }
+bool SDL_SetRenderDrawBlendMode(SDL_Renderer*r,SDL_BlendMode m){ (void)r; (void)m; return true; }
 bool SDL_RenderClear(SDL_Renderer*r){ for(int i=0;i<OW*OH;i++) outbuf[i]=drawcol; return true; }
-bool SDL_RenderFillRect(SDL_Renderer*r,const SDL_FRect*d){ for(int y=(int)d->y;y<(int)(d->y+d->h);y++) for(int x=(int)d->x;x<(int)(d->x+d->w);x++) if(x>=0&&y>=0&&x<OW&&y<OH) outbuf[y*OW+x]=drawcol; return true; }
+bool SDL_RenderFillRect(SDL_Renderer*r,const SDL_FRect*d){ for(int y=(int)d->y;y<(int)(d->y+d->h);y++) for(int x=(int)d->x;x<(int)(d->x+d->w);x++) if(x>=0&&y>=0&&x<OW&&y<OH){ if(drawA>=255) outbuf[y*OW+x]=drawcol; else { uint32_t o=outbuf[y*OW+x]; uint32_t r=0xFF000000u; for(int sh=0;sh<24;sh+=8){ int a=(o>>sh)&255,b=(drawcol>>sh)&255; r|=(uint32_t)((a*(255-drawA)+b*drawA)/255)<<sh; } outbuf[y*OW+x]=r; } } return true; }
 bool SDL_RenderTexture(SDL_Renderer*r,SDL_Texture*t,const SDL_FRect*a,const SDL_FRect*d){
   for(int y=(int)d->y;y<(int)(d->y+d->h);y++) for(int x=(int)d->x;x<(int)(d->x+d->w);x++){ if(x<0||y<0||x>=OW||y>=OH) continue;
     int u=(int)((x-d->x)*t->w/d->w), v=(int)((y-d->y)*t->h/d->h); outbuf[y*OW+x]=t->px[v*t->w+u]; } return true; }
@@ -56,10 +57,15 @@ void SDL_DestroyTexture(SDL_Texture*t){} void SDL_DestroyRenderer(SDL_Renderer*r
 static void script_update(void){
   if(!script) return;
   memset(keys,0,sizeof keys); mbtn=0;
-  mousex=getenv("MOUSEX")?(float)atof(getenv("MOUSEX")):-1; mousey=getenv("MOUSEY")?(float)atof(getenv("MOUSEY")):-1;
+  if(getenv("MOUSEX")) mousex=(float)atof(getenv("MOUSEX")); if(getenv("MOUSEY")) mousey=(float)atof(getenv("MOUSEY"));
+  if(getenv("NAVSCRIPT")){   /* a remote: arrows and the centre button, pulsed */
+    static const struct { Uint64 t; int key; } nav[] = {
+      {20000,SDL_SCANCODE_DOWN},{21000,SDL_SCANCODE_DOWN},{22000,SDL_SCANCODE_RIGHT},{23000,SDL_SCANCODE_UP},{24000,SDL_SCANCODE_SELECT},{0,0} };
+    for(int i=0;nav[i].t;i++) if(now>=nav[i].t && now<nav[i].t+120) keys[nav[i].key]=true;
+  }
   if(script==2) return;
   if(getenv("NOMENU")) return;
-  if(now>26000){ /* in game: sweep left/right and hold fire */
+  if(now>26000 && !getenv("TOUCH")){ /* in game: sweep left/right and hold fire */
     Uint64 t=(now-26000)/1000;
     if((t/2)%2==0) keys[SDL_SCANCODE_LEFT]=true; else keys[SDL_SCANCODE_RIGHT]=true;
     if(((now-26000)/150)%2==0) keys[SDL_SCANCODE_SPACE]=true;
@@ -72,14 +78,21 @@ bool SDL_PollEvent(SDL_Event*e){
   if(perm_pending && now>=perm_at){ perm_pending=0; perm_cb(perm_ud,"android.permission.READ_EXTERNAL_STORAGE",true); }
   script_update();
   if(script){
-    if(clicks_done==0 && now>800){ clicks_done=1; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.x=320; e->button.y=240; printf("[%llu ms] click (skip intro)\n",(unsigned long long)now); return true; }
-    if(clicks_done==1 && now>25000 && !getenv("NOMENU")){ clicks_done=2; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN;
+    if(clicks_done==0 && now>800){ clicks_done=1; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.button=1; e->button.which=getenv("TOUCH")?(Uint32)-1:0; e->button.x=320; e->button.y=240; printf("[%llu ms] click (skip intro)\n",(unsigned long long)now); return true; }
+    if(clicks_done==1 && now>25000 && !getenv("NOMENU")){ clicks_done=2; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.button=1; e->button.which=getenv("TOUCH")?(Uint32)-1:0;
       e->button.x=getenv("CX")?atoi(getenv("CX")):460; e->button.y=getenv("CY")?atoi(getenv("CY")):42;
       printf("[%llu ms] click menu (%g,%g)\n",(unsigned long long)now,e->button.x,e->button.y); return true; }
     if(clicks_done==2 && getenv("CX2") && now>28000){ clicks_done=3; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN;
       e->button.x=atoi(getenv("CX2")); e->button.y=getenv("CY2")?atoi(getenv("CY2")):0;
       printf("[%llu ms] click 2 (%g,%g)\n",(unsigned long long)now,e->button.x,e->button.y); return true; }
     if(clicks_done>=2 && script==2 && !getenv("CX2") && now>(Uint64)(30000+(clicks_done-2)*9000)){ clicks_done++; memset(e,0,sizeof *e); e->type=SDL_EVENT_MOUSE_BUTTON_DOWN; e->button.x=320; e->button.y=240; printf("[%llu ms] click page\n",(unsigned long long)now); return true; }
+  }
+  if(getenv("TOUCH")){
+    static int tstep=0; static const struct { Uint64 t; int type; float x, y; Uint64 id; } tv[] = {
+      {27000,SDL_EVENT_FINGER_DOWN,0.12f,0.62f,1},{27400,SDL_EVENT_FINGER_MOTION,0.20f,0.55f,1},
+      {28000,SDL_EVENT_FINGER_DOWN,0.86f,0.68f,2},{30000,SDL_EVENT_FINGER_UP,0.86f,0.68f,2},{31000,SDL_EVENT_FINGER_UP,0.2f,0.55f,1},{0,0,0,0,0} };
+    if(tv[tstep].t && now>=tv[tstep].t){ memset(e,0,sizeof *e); e->type=tv[tstep].type; e->tfinger.fingerID=tv[tstep].id; e->tfinger.x=tv[tstep].x; e->tfinger.y=tv[tstep].y;
+      printf("[%llu ms] finger %d id %d\n",(unsigned long long)now,tv[tstep].type,(int)tv[tstep].id); tstep++; return true; }
   }
   if(getenv("KEYSCRIPT") && !clicks_done && now>26000){ clicks_done=1; memset(e,0,sizeof *e);
       e->type=SDL_EVENT_TEXT_INPUT; e->text.text=getenv("KEYSCRIPT"); printf("[%llu ms] typed %s\n",(unsigned long long)now,getenv("KEYSCRIPT")); return true; }
@@ -118,7 +131,7 @@ bool SDL_HideCursor(void){ return true; }
 bool SDL_ShowCursor(void){ return true; }
 
 bool SDL_SetWindowRelativeMouseMode(SDL_Window *w, bool on){ (void)w; (void)on; return true; }
-void SDL_WarpMouseInWindow(SDL_Window *w, float x, float y){ (void)w; (void)x; (void)y; }
+void SDL_WarpMouseInWindow(SDL_Window *w, float x, float y){ (void)w; mousex=x; mousey=y; }
 bool SDL_GetWindowRelativeMouseMode(SDL_Window *w){ (void)w; return false; }
 unsigned int SDL_GetRelativeMouseState(float *x, float *y){
   static float px=-1, py=-1;
@@ -134,6 +147,7 @@ SDL_AudioDeviceID SDL_OpenAudioDevice(SDL_AudioDeviceID d, const SDL_AudioSpec *
 SDL_AudioStream *SDL_CreateAudioStream(const SDL_AudioSpec *a, const SDL_AudioSpec *b){ (void)a;(void)b; return 0; }
 bool SDL_BindAudioStream(SDL_AudioDeviceID d, SDL_AudioStream *s){ (void)d;(void)s; return true; }
 bool SDL_ClearAudioStream(SDL_AudioStream *s){ (void)s; return true; }
+bool SDL_SetAudioStreamGain(SDL_AudioStream *s, float g){ (void)s; (void)g; return true; }
 bool SDL_SetAudioStreamFormat(SDL_AudioStream *s, const SDL_AudioSpec *a, const SDL_AudioSpec *b){ (void)s;(void)a;(void)b; return true; }
 bool SDL_RaiseWindow(SDL_Window *w){ (void)w; return true; }
 
@@ -194,3 +208,8 @@ float SDL_GetWindowPixelDensity(SDL_Window *w){ (void)w; return 1.0f; }
 
 void SDL_ShowOpenFileDialog(SDL_DialogFileCallback cb, void *ud, SDL_Window *w, const SDL_DialogFileFilter *f, int n, const char *d, bool m)
 { (void)w;(void)f;(void)n;(void)d;(void)m; cb(ud, NULL, 0); }
+
+/* SDL_IOStream, as a FILE */
+SDL_IOStream *SDL_IOFromFile(const char *p, const char *m){ return (SDL_IOStream*)fopen(p,m); }
+size_t SDL_ReadIO(SDL_IOStream *s, void *b, size_t n){ return fread(b,1,n,(FILE*)s); }
+bool SDL_CloseIO(SDL_IOStream *s){ return fclose((FILE*)s)==0; }
