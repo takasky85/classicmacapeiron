@@ -254,23 +254,21 @@ jobs:
 
             ## Android and Google TV
 
-            Sideload `apeiron.apk` (the Downloader app, or `adb install apeiron.apk`) and put the
-            Apeiron 1.0.3 zip in the Download folder. The first time the game starts it opens a
-            Settings page for "All files access": turn it on for Apeiron and go Back. It then finds
-            the zip, offers to make the artwork from it, and keeps the result in its own folder.
-            (Android 6 to 10 asks a plain permission question instead.) If the zip is somewhere
-            else the game shows a file browser (remote, gamepad, mouse or touch) to find it. If your
-            device has no such Settings page, grant it from a computer:
+            Sideload `apeiron.apk` (on a phone, open it from Downloads; on a TV use the Downloader
+            app, or `adb install apeiron.apk`). Nothing asks for a permission up front. The first
+            start shows a screen with big buttons: it looks for the Apeiron 1.0.3 zip you downloaded
+            and offers to make the artwork from it, or you tap **Choose the zip** and pick it with
+            Android's own file picker (the Downloads folder is the usual place). The result is kept
+            in the game's own folder, so this happens once.
 
-            ```
-            adb shell appops set io.github.takasky85.apeiron MANAGE_EXTERNAL_STORAGE allow
-            ```
+            **Phone:** touch controls appear on screen - a stick on the left, a fire button, and
+            pause and back buttons. Touch also works in all the menus. Options has a setting to hide
+            the controls.
 
-            or put the zip where no permission is needed:
-            `adb push Apeiron_1.0.3.zip /sdcard/Android/data/io.github.takasky85.apeiron/files/`
+            **Google TV and controllers:** the remote's d-pad or a controller's stick moves a focus
+            ring through the menus, the centre button or A selects, and Back goes back. In play the
+            d-pad or stick steers and centre or A fires.
 
-            A mouse works, including for steering. Otherwise the d-pad or a stick steers and A
-            fires; in the menus the stick moves a pointer and A clicks. Options > Controls has a
-            Mouse speed setting.
+            A mouse works too: left button fires, right pauses, middle goes back to the title.
 
             Without the zip or an artwork folder the game stops at startup and says what it needs.
